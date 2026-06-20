@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skillbrew"
+version = "0.0.1"
+description = "AI 能力包管理器：把素材消化成可执行计划，授权后安装成 AI 真实能力，并维护可去重累加的能力台账"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "skillbrew contributors"}]
+dependencies = [
+    "openai>=1.0",
+]
+
+[project.optional-dependencies]
+# 视频获取与 ASR（MVP B站单源才需要；较大，按需安装避免拖慢）
+media = [
+    "yt-dlp",
+    "faster-whisper",
+]
+dev = [
+    "pytest",
+]
+
+[project.scripts]
+skillbrew = "skillbrew.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["skillbrew*"]

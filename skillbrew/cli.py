@@ -1,0 +1,685 @@
+"""skillbrew 命令行入口。
+
+用法：
+  python -m skillbrew doctor          # 自检：配置 + 文本连通 + 视觉模型列表
+  python -m skillbrew doctor --vision # 额外跑一次真·看图（Agnes ~5min/张）
+  python -m skillbrew config          # 打印解析后的配置（key 脱敏）
+
+pip install -e . 后也可直接 `skillbrew ...`。
+CLI 用标准库 argparse（零新增依赖；后续可换 Typer，接口不变）。
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import os
+import struct
+import sys
+import tempfile
+import time
+import zlib
+from pathlib import Path
+
+from . import __version__
+from . import llm
+from .config import Config, load_config
+
+
+def _print_config(cfg: Config) -> None:
+    exists = "存在" if cfg.env_path.exists() else "缺失"
+    print(f"  .env      = {cfg.env_path}  ({exists})")
+    print(f"  仓库根     = {cfg.root}")
+    for name, p in (("文本 TEXT", cfg.text), ("视觉 VISION", cfg.vision)):
+        print(
+            f"  [{name}] base_url={p.base_url or '(未配置)'}  "
+            f"model={p.model or '(未配置)'}  key={p.key_masked}"
+        )
+
+
+def _check_present(cfg: Config) -> bool:
+    """D21：文本必备（缺则返回 False→FAIL）；视觉可选（缺只 WARN+降级提示，不影响返回值）。"""
+    ok = True
+    if cfg.text.missing:
+        ok = False
+        print(f"  [缺] TEXT 组缺少: {', '.join(cfg.text.missing)}（文本模型必备，D21）")
+    if cfg.vision.missing:
+        print(f"  [WARN] VISION 组缺少: {', '.join(cfg.vision.missing)}（视觉可选，将降级「视频转语音→转文字」，D21）")
+    return ok
+
+
+def _make_half_half_png(w: int = 120, h: int = 120) -> bytes:
+    """标准库手搓一张「左红右蓝」PNG。模型答出此布局即证明真看图。"""
+
+    def chunk(typ: bytes, data: bytes) -> bytes:
+        c = typ + data
+        return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
+
+    half = w // 2
+    red, blue = bytes([255, 0, 0]), bytes([0, 0, 255])
+    raw = b"".join(b"\x00" + red * half + blue * (w - half) for _ in range(h))
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
+
+
+def cmd_config(_args: argparse.Namespace) -> int:
+    cfg = load_config()
+    print("skillbrew 配置（key 已脱敏）：")
+    _print_config(cfg)
+    return 0
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    print(f"skillbrew {__version__} 自检")
+    print("=" * 60)
+    cfg = load_config()
+    _print_config(cfg)
+    print("-" * 60)
+    text_ok = _check_present(cfg)
+
+    # ---- 判断步 recommend 可用性（D21：无 key 不走死路，keyword/manual 恒可用）----
+    from . import recommend
+    print("\n[判断步 recommend] 三模式可用性：")
+    for line in recommend.recommend_health(cfg):
+        print("   -", line)
+
+    if not text_ok:
+        print("\n[FAIL] 文本模型必备（D21）。keyword/manual 判断步仍可用；请检查 .env（参考 .env.example）。")
+        return 1
+
+    # ---- 文本组 ----
+    print("\n[文本组] 列模型 (GET /models)：")
+    try:
+        for i in llm.list_models(cfg.text):
+            print("   -", i)
+    except Exception as e:  # 列模型非关键，失败不阻塞
+        print("   [WARN] 列模型失败:", repr(e)[:200])
+
+    print("[文本组] 实测对话：")
+    t0 = time.time()
+    try:
+        reply = llm.chat_text(
+            cfg, "用一句话介绍你自己，并说出你的模型名。", timeout=60
+        )
+        print(f"   [OK] {time.time() - t0:.1f}s -> {reply}")
+    except Exception as e:
+        print(f"   [FAIL] {time.time() - t0:.1f}s ->", repr(e)[:300])
+        return 2
+
+    # ---- 视觉组（D21：可选，缺则降级不 fail）----
+    if not cfg.vision.is_complete:
+        print("\n[视觉组] 未配置 → 降级模式（视频转语音→语音转文字，D21）。")
+        print("   建议配多模态模型启用关键帧看图，但不阻断主流程。")
+    else:
+        print("\n[视觉组] 列模型 (GET /models)：")
+        try:
+            for i in llm.list_models(cfg.vision):
+                print("   -", i)
+        except Exception as e:
+            print("   [WARN] 列模型失败:", repr(e)[:200])
+
+        if args.vision:
+            print("\n[视觉组] 实测真·看图（生成左红右蓝图，Agnes ~5min，请耐心）...")
+            tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            tmp.write(_make_half_half_png())
+            tmp.close()
+            t0 = time.time()
+            try:
+                reply = llm.chat_vision(
+                    cfg, "这张图里有哪些颜色？怎么排列的？一句话回答。", tmp.name
+                )
+                print(f"   [OK] {time.time() - t0:.1f}s -> {reply}")
+                print("   (期望：左红右蓝 —— 答对即证明模型真在看图)")
+            except Exception as e:
+                print(f"   [FAIL] {time.time() - t0:.1f}s ->", repr(e)[:300])
+            finally:
+                os.unlink(tmp.name)
+        else:
+            print("\n[视觉组] 跳过真·看图实测（加 --vision 跑，Agnes ~5min/张）")
+
+    print("\n" + "=" * 60)
+    print("自检完成。")
+    return 0
+
+
+# ---- 主流程子命令：run / ingest / understand / plan ----
+
+def _resolve_source(cfg: Config, s: str) -> Path:
+    """BV号/URL → data/sources/<bvid>；否则当成源目录路径。"""
+    from . import ingest
+    if ingest.BVID_RE.search(s):
+        return cfg.data_dir / "sources" / ingest.parse_bvid(s)
+    return Path(s)
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    """一键：采集 → 理解(字幕+关键帧+视觉) → 消化 → 草稿计划，到此为止不安装。"""
+    from . import ingest, understand, plan
+
+    cfg = load_config()
+    bvid = ingest.parse_bvid(args.source)
+    src_dir = cfg.data_dir / "sources" / bvid
+    src_dir.mkdir(parents=True, exist_ok=True)
+    print(f"源: {bvid}  目录: {src_dir}")
+
+    # ① 采集
+    have_media = (src_dir / "video.mp4").exists() and (src_dir / "audio.mp3").exists()
+    if not args.force and have_media:
+        print("[①采集] 已存在，跳过")
+    else:
+        print("[①采集] 下载 ...")
+        r = ingest.fetch_bilibili(args.source, src_dir, qn=args.qn)
+        print(f"   -> {r.title}（时长 {r.duration}s）")
+
+    # ② 字幕 ASR
+    if args.skip_asr:
+        print("[②字幕] --skip-asr 跳过")
+    elif not args.force and (src_dir / "transcript.json").exists():
+        print("[②字幕] 已存在，跳过")
+    else:
+        print("[②字幕] ASR 转写（首次加载模型~160s）...")
+        t = understand.transcribe(src_dir / "audio.mp3", src_dir)
+        print(f"   -> {len(t['segments'])} 段, {len(t['text'])} 字")
+
+    # ③ 关键帧
+    if not args.force and (src_dir / "keyframes_align.json").exists():
+        print("[③关键帧] 已存在，跳过")
+    else:
+        print(f"[③关键帧] farthest-point 采样 {args.max_frames} 帧 ...")
+        kfs = understand.select_keyframes(src_dir / "video.mp4", src_dir, max_frames=args.max_frames)
+        align = understand.align_keyframes(src_dir / "transcript.json", kfs)
+        (src_dir / "keyframes_align.json").write_text(
+            json.dumps(align, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        print(f"   -> {len(kfs)} 张")
+
+    # ④ 视觉看图
+    if args.skip_vision:
+        print("[④视觉] --skip-vision 跳过")
+    elif not args.force and (src_dir / "keyframe_visions.json").exists():
+        print("[④视觉] 已存在，跳过")
+    else:
+        print(f"[④视觉] 看关键帧（Agnes ~5min/张，并发 {args.max_workers}）...")
+        res = understand.describe_keyframes(cfg, src_dir, max_workers=args.max_workers)
+        ok = sum(1 for r in res if r["ok"])
+        print(f"   -> {ok}/{len(res)} 张成功")
+        if ok < len(res):
+            print("   ⚠️ 部分帧失败，草稿计划将只基于成功的视觉描述 + 字幕")
+
+    # ⑤ 消化 → 草稿计划
+    if not args.force and (src_dir / "plan.json").exists():
+        print("[⑤消化] 计划已存在，跳过（--force 可重跑）")
+    else:
+        print("[⑤消化] DeepSeek 融合字幕 + 视觉 → 计划 ...")
+        plan.digest(src_dir)
+
+    # 摘要
+    p = json.loads((src_dir / "plan.json").read_text(encoding="utf-8"))
+    print("\n" + "=" * 60)
+    print(f"草稿计划已生成：{src_dir / 'plan.json'}")
+    print(f"标题：{p.get('source_title', '')}")
+    caps = p.get("capabilities", [])
+    print(f"能力 {len(caps)} 项：")
+    for c in caps:
+        print(f"  - [{c.get('form', '?')}] {c.get('name', '')}")
+    print("=" * 60)
+    print("刹车：到此为止，未安装任何东西。安装需另跑 install 并单独授权。")
+    return 0
+
+
+def cmd_ingest(args: argparse.Namespace) -> int:
+    """只跑采集（下载视频 + 音频）。"""
+    from . import ingest
+
+    cfg = load_config()
+    bvid = ingest.parse_bvid(args.source)
+    src_dir = cfg.data_dir / "sources" / bvid
+    r = ingest.fetch_bilibili(args.source, src_dir, qn=args.qn)
+    print(f"[OK] {r.title}")
+    print(f"     bvid={r.bvid} 时长={r.duration}s")
+    print(f"     视频: {r.video_path} ({r.video_path.stat().st_size // 1024}KB)")
+    print(f"     音频: {r.audio_path} ({r.audio_path.stat().st_size // 1024}KB)")
+    return 0
+
+
+def cmd_understand(args: argparse.Namespace) -> int:
+    """只跑理解（字幕 + 关键帧 + 视觉）。"""
+    from . import understand
+
+    cfg = load_config()
+    src = _resolve_source(cfg, args.source)
+    if not (src / "video.mp4").exists():
+        print(f"[ERR] {src} 没有 video.mp4（先跑 ingest）")
+        return 1
+
+    if args.skip_asr:
+        print("[字幕] --skip-asr 跳过")
+    elif not args.force and (src / "transcript.json").exists():
+        print("[字幕] 已存在，跳过")
+    else:
+        print("[字幕] ASR 转写 ...")
+        t = understand.transcribe(src / "audio.mp3", src)
+        print(f"   -> {len(t['segments'])} 段, {len(t['text'])} 字")
+
+    if not args.force and (src / "keyframes_align.json").exists():
+        print("[关键帧] 已存在，跳过")
+    else:
+        print(f"[关键帧] 采样 {args.max_frames} 帧 ...")
+        kfs = understand.select_keyframes(src / "video.mp4", src, max_frames=args.max_frames)
+        align = understand.align_keyframes(src / "transcript.json", kfs)
+        (src / "keyframes_align.json").write_text(
+            json.dumps(align, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        print(f"   -> {len(kfs)} 张")
+
+    if args.skip_vision:
+        print("[视觉] --skip-vision 跳过")
+    elif not args.force and (src / "keyframe_visions.json").exists():
+        print("[视觉] 已存在，跳过")
+    else:
+        print(f"[视觉] 看关键帧（并发 {args.max_workers}）...")
+        res = understand.describe_keyframes(cfg, src, max_workers=args.max_workers)
+        ok = sum(1 for r in res if r["ok"])
+        print(f"   -> {ok}/{len(res)} 张成功")
+
+    print(f"[OK] → {src}")
+    return 0
+
+
+def cmd_plan(args: argparse.Namespace) -> int:
+    """只跑消化（字幕 + 视觉 → 草稿计划）。"""
+    from . import plan
+
+    cfg = load_config()  # 校验配置（digest 内部也会 load，这里先暴露配置问题）
+    src = _resolve_source(cfg, args.source)
+    p = plan.digest(src)
+    print(f"[OK] 计划存 {src / 'plan.json'}")
+    print(f"  标题：{p.get('source_title', '')}")
+    caps = p.get("capabilities", [])
+    print(f"  能力 {len(caps)} 项：")
+    for c in caps:
+        print(f"    - [{c.get('form', '?')}] {c.get('name', '')}")
+    print("  （草稿，未安装）")
+    return 0
+
+
+def cmd_verify(args: argparse.Namespace) -> int:
+    """溯源：回 GitHub 取一手资料，纠正草稿计划 + 出机器安装清单（不安装）。"""
+    from . import verify as verify_mod
+
+    cfg = load_config()  # 校验配置（verify 不用 LLM，但保持路径解析一致）
+    src = _resolve_source(cfg, args.source)
+    if not (src / "plan.json").exists():
+        print(f"[ERR] {src} 没有 plan.json（先跑 plan）")
+        return 1
+
+    print(f"[溯源] {src}")
+
+    def on_progress(s: dict, i: int, n: int) -> None:
+        print(f"   [{i + 1}/{n}] 取 {s['category']}/{s['name']} SKILL.md ...", flush=True)
+
+    try:
+        summary = verify_mod.verify(src, repo_override=args.repo, on_progress=on_progress)
+    except Exception as e:  # noqa: BLE001
+        print(f"[FAIL] 溯源失败：{e}")
+        return 2
+
+    print("\n" + "=" * 60)
+    print(f"✅ 一手核实：{summary['verified_repo']}（⭐{summary['stars']}，{summary['stars_observed_at']}）")
+    print(f"   定位方式：{summary['how_resolved']}")
+    print(f"   全仓 skill：{summary['skill_total']} 个 → {summary['install_list']}")
+    print(f"   plan.json 纠正 {len(summary['corrections'])} 处：")
+    for c in summary["corrections"]:
+        print(f"     - {c}")
+    print("=" * 60)
+    print("刹车：到此只核实 + 出安装清单，未安装。安装需另跑 install 并单独授权。")
+    return 0
+
+
+def cmd_dedup(args: argparse.Namespace) -> int:
+    """去重：扫本地已装 skill 建基准 → 比 install_list → 判 new/merge/skip（不安装）。"""
+    from . import dedup as dedup_mod
+
+    cfg = load_config()  # 校验配置 + 路径解析一致（dedup 不用 LLM）
+    src = _resolve_source(cfg, args.source)
+    if not (src / "install_list.json").exists():
+        print(f"[ERR] {src} 没有 install_list.json（先跑 verify）")
+        return 1
+
+    # D18：扫本地优先 —— 默认含用户级 ~/.claude/skills，--skills-dir 可追加工作区等目录
+    skill_dirs = [Path.home() / ".claude" / "skills"] + [Path(d) for d in (args.skills_dir or [])]
+
+    print(f"[去重] {src}")
+    print(f"   扫描基准目录：{[str(d) for d in skill_dirs]}")
+
+    def on_progress(stage: str, n) -> None:
+        if stage == "classify":
+            print(f"   逐项比对 install_list {n} 个 skill ...", flush=True)
+
+    try:
+        summary = dedup_mod.dedup(src, skill_dirs=skill_dirs, on_progress=on_progress)
+    except Exception as e:  # noqa: BLE001
+        print(f"[FAIL] 去重失败：{e}")
+        return 2
+
+    bc = summary["baseline"]["counts"]
+    s = summary["summary"]
+    print("\n" + "=" * 60)
+    print(f"基准：{bc['distinct']} 个 distinct skill（磁盘 {bc['disk_entries']} + 台账 {bc['registry_rows']} 行）")
+    print(f"      状态分布：{bc['by_status']}")
+    print(f"install_list {s['total']} 项判定：new={s['new']}  merge={s['merge']}  skip={s['skip']}")
+    print(f"报告 → {summary['dedup_path']}")
+    merges = [d for d in summary["decisions"] if d["decision"] == "merge"]
+    if merges:
+        print(f"\nmerge 候选（建议人工确认整并，不自动决定）：")
+        for d in merges:
+            print(f"  - {d['name']} → {d['target']}  [{', '.join(d.get('shared', []))}]")
+    print("=" * 60)
+    print("刹车：到此只判定 + 出报告，未安装。安装需另跑 install 并单独授权。")
+    return 0
+
+
+def cmd_recommend(args: argparse.Namespace) -> int:
+    """判断步（recommend）：去重之后、安装之前，判「值不值得装」（D19 判断先行）。
+
+    读 dedup.json（new/merge/skip 决策）+ install_list.json（候选描述），扫本机能力画像，
+    按 --mode 给 new 候选打分/勾选 → 出 recommend.json（approved 名单）。不安装、不改台账。
+    keyword/manual 纯本地不烧 token；ai 属积木 D（调文本模型，烧 token，需用户在场，暂未接线）。
+    """
+    from . import recommend as rec
+
+    cfg = load_config()  # 校验配置 + 路径解析一致（keyword/manual 不用 LLM）
+    src = _resolve_source(cfg, args.source)
+    if not (src / "dedup.json").exists():
+        print(f"[ERR] {src} 没有 dedup.json（先跑 dedup）")
+        return 1
+    if not (src / "install_list.json").exists():
+        print(f"[ERR] {src} 没有 install_list.json（先跑 verify）")
+        return 1
+
+    mode = args.mode
+    if mode == rec.MODE_AI:
+        # D21 前置：文本模型配置须完整，否则不烧 token、不走死路（提示用 keyword/manual）
+        if not cfg.text.is_complete:
+            print("[ERR] ai 模式需文本模型配置（D21 前置），但 .env 缺 base_url/api_key/model 之一。")
+            print(f"      text={cfg.text.key_masked}")
+            print("      请先补 .env，或改用 --mode keyword（规则打分）/ --mode manual（人工勾选），都不烧 token。")
+            return 1
+
+    # ---- 读一手数据 ----
+    dedup_data = json.loads((src / "dedup.json").read_text(encoding="utf-8"))
+    ilist = json.loads((src / "install_list.json").read_text(encoding="utf-8"))
+    decisions = dedup_data.get("decisions", [])
+    descriptions = {
+        s.get("name", ""): (s.get("description") or "")
+        for s in ilist.get("skills", [])
+    }
+
+    # ---- 本机能力画像（D18 动态基准，复用 dedup 扫描口径）----
+    skill_dirs = [Path.home() / ".claude" / "skills"] + [Path(d) for d in (args.skills_dir or [])]
+    print(f"[判断步] {src}  mode={mode}")
+    print(f"   画像扫描目录：{[str(d) for d in skill_dirs]}")
+    profile = rec.build_profile(skill_dirs)
+    print(f"   本机画像：distinct={profile.distinct}  分类分布={profile.by_category}")
+
+    # ---- 按 mode 给 new 候选打分 / 人工勾选 / ai 判断 ----
+    if mode == rec.MODE_KEYWORD:
+        new_js = rec.score_keyword_batch(decisions, profile, descriptions=descriptions)
+    elif mode == rec.MODE_AI:
+        from . import llm
+        print(f"   [ai] 烧 token 调文本模型 {cfg.text.model}，分批判断（用户在场监控；--limit={args.limit}）...")
+        def _on_batch(i, n, bs, ok):
+            tag = "ok" if ok else "FAIL→整批降级「不值得装」"
+            print(f"   [ai] 批 {i}/{n}（{bs} 条）→ {tag}")
+        new_js = rec.judge_ai(
+            decisions, profile, descriptions=descriptions,
+            cfg=cfg, chat_fn=llm.chat_text, limit=args.limit, on_batch=_on_batch,
+        )
+    else:  # manual
+        new_js = rec.pick_manual(decisions, descriptions=descriptions)
+
+    # ---- 合并 skip/merge（trivial 兜底）+ 装配报告 ----
+    judgments = rec.merge_judgments(decisions, new_js)
+    report = rec.assemble_report(
+        decisions, judgments, mode=mode,
+        source_video=dedup_data.get("source_video", ""),
+        repo=dedup_data.get("install_list_repo", "") or ilist.get("verified_repo", ""),
+        source_skip_reason=args.source_skip or "",
+    )
+
+    out_path = src / "recommend.json"
+    out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # ---- 打印汇总（D22 反盲盒：说清源级建议 + approved 子集）----
+    sv = report["source_verdict"]
+    sm = report["summary"]
+    print("\n" + "=" * 60)
+    print(f"源级建议：{sv}" + (f"（理由：{args.source_skip}）" if args.source_skip else ""))
+    print(f"候选汇总：total={sm['total']}  by_verdict={sm['by_verdict']}  approved={sm['approved']}")
+    approved = report["approved"]
+    shown = approved[:20]
+    print(f"approved（install 该装的子集，D20 挑着买）：{shown}{' ...' if len(approved) > 20 else ''}")
+    print(f"报告 → {out_path}")
+    print("=" * 60)
+    print("刹车：判断步只出 recommend.json，未安装。install 只装 approved 子集（须另跑 install --approve）。")
+    return 0
+
+
+def cmd_install(args: argparse.Namespace) -> int:
+    """安装：照 dedup 判定的 new skill，整目录从 GitHub raw 拷到本地 .claude/skills/，登记台账。"""
+    from . import install as install_mod
+
+    cfg = load_config()  # 校验配置 + 路径解析一致（install 不用 LLM，纯 GitHub raw）
+    src = _resolve_source(cfg, args.source)
+    if not (src / "install_list.json").exists():
+        print(f"[ERR] {src} 没有 install_list.json（先跑 verify）")
+        return 1
+    if not (src / "dedup.json").exists():
+        print(f"[ERR] {src} 没有 dedup.json（先跑 dedup）")
+        return 1
+
+    mode = "真装" if args.approve else "dry-run（只列计划，不下载不写台账）"
+    print(f"[安装] {src}  {mode}")
+
+    def on_progress(s: dict, i: int, n: int) -> None:
+        print(f"   [{i + 1}/{n}] 装 {s['category']}/{s['name']} ...", flush=True)
+
+    try:
+        r = install_mod.install(
+            src, target_dir=args.target_dir, approve=args.approve,
+            include_deprecated=args.include_deprecated, on_progress=on_progress,
+        )
+    except Exception as e:  # noqa: BLE001
+        print(f"[FAIL] 安装失败：{e}")
+        return 2
+
+    print("\n" + "=" * 60)
+    print(f"源视频：{r['source_video']}  仓库：{r['verified_repo'] or '(未知)'}")
+    print(f"目标目录：{r['target_dir']}  安装前 distinct：{r['before']}")
+    print(f"将装 new：{len(r['to_install'])} 个")
+    for n in r["to_install"]:
+        print(f"  - {n}")
+    if r["skipped_merge"]:
+        print(f"跳过 merge（人工确认）：{len(r['skipped_merge'])} 个 → {r['skipped_merge']}")
+    if r["skipped_deprecated"]:
+        print(f"跳过 deprecated：{len(r['skipped_deprecated'])} 个 → {r['skipped_deprecated']}（--include-deprecated 可装）")
+    if r["skipped_already"]:
+        print(f"跳过已装/已整并：{len(r['skipped_already'])} 个")
+    if args.approve:
+        installed = r.get("installed", [])
+        print(f"\n✅ 已落盘 {len(installed)} 个 skill，安装后 distinct：{r.get('after')}")
+        for s in installed:
+            print(f"  - {s['name']}（{s['file_count']} 文件）→ {s['path']}")
+        print(f"   {r.get('note', '')}")
+    else:
+        print("\n   " + r.get("note", ""))
+        print("   加 --approve 才真落盘 + 写台账。")
+    print("=" * 60)
+    return 0
+
+
+def cmd_record(args: argparse.Namespace) -> int:
+    """记录+看板：从台账/清单/去重一手数据代码生成安装记录与看板（只读，不改台账）。"""
+    from . import record as record_mod
+
+    cfg = load_config()  # 校验配置 + 路径解析一致（record 不用 LLM，纯只读）
+    src = _resolve_source(cfg, args.source)
+    if not (src / "install_list.json").exists():
+        print(f"[ERR] {src} 没有 install_list.json（先跑 verify）")
+        return 1
+    if not (src / "dedup.json").exists():
+        print(f"[ERR] {src} 没有 dedup.json（先跑 dedup）")
+        return 1
+
+    # skill_dirs：默认交给 record 读 dedup.json 的 baseline.skill_dirs（与去重同口径）；
+    # --skills-dir 为追加（dedup 默认目录 + 追加），避免漏扫默认两个目录。
+    skill_dirs = None
+    if args.skills_dir:
+        dd = json.loads((src / "dedup.json").read_text(encoding="utf-8"))
+        base = dd.get("baseline", {}).get("skill_dirs", []) or [str(Path.home() / ".claude" / "skills")]
+        skill_dirs = [Path(d) for d in base] + [Path(d) for d in args.skills_dir]
+
+    print(f"[记录+看板] {src}")
+
+    def on_progress(stage: str, n) -> None:
+        if stage == "read":
+            print(f"   扫描磁盘目录：{[str(d) for d in (n or [])]}")
+        elif stage == "write":
+            print("   生成 RECORD.md + DASHBOARD.md ...")
+
+    try:
+        r = record_mod.record(src, skill_dirs=skill_dirs, on_progress=on_progress)
+    except Exception as e:  # noqa: BLE001
+        print(f"[FAIL] 记录失败：{e}")
+        return 2
+
+    ig = r["integrity"]
+    print("\n" + "=" * 60)
+    print(f"✅ 代码生成完成：仓库 {r['verified_repo']}")
+    print(f"   本源安装会话：{r['sessions']} 次；本次新装 {len(r['this_run_installed'])} 个")
+    print(f"   落盘核对：磁盘 {ig['disk_active_distinct']} == 台账 {ig['registry_active']}"
+          f" → {'✅一致' if ig['ok'] else '⚠️不一致'}")
+    if ig["orphans"]:
+        print(f"   孤儿（磁盘有/台账无）：{ig['orphans']}")
+    if ig["missing"]:
+        print(f"   缺失（台账有/磁盘无）：{ig['missing']}")
+    print(f"   记录 → {r['record_path']}")
+    print(f"   看板 → {r['dashboard_path']}")
+    print("=" * 60)
+    print("刹车：record 只读，未改台账、未下载、未调 LLM。")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="skillbrew",
+        description="AI 能力包管理器：素材 → 消化 → 计划 → 授权安装 → 能力台账",
+    )
+    parser.add_argument("--version", action="version", version=f"skillbrew {__version__}")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_doc = sub.add_parser("doctor", help="自检：配置 + 文本/视觉连通性")
+    p_doc.add_argument(
+        "--vision", action="store_true", help="额外跑一次真·看图实测（Agnes ~5min/张）"
+    )
+    p_doc.set_defaults(func=cmd_doctor)
+
+    p_cfg = sub.add_parser("config", help="打印解析后的配置（key 脱敏）")
+    p_cfg.set_defaults(func=cmd_config)
+
+    p_run = sub.add_parser("run", help="一键：采集→理解→消化→草稿计划（到此为止，不安装）")
+    p_run.add_argument("source", help="B站 URL 或 BV 号")
+    p_run.add_argument("--qn", type=int, default=32, help="清晰度 16/32/64/80")
+    p_run.add_argument("--max-frames", type=int, default=5, help="关键帧数")
+    p_run.add_argument("--max-workers", type=int, default=3, help="视觉并发数")
+    p_run.add_argument("--skip-asr", action="store_true", help="跳过字幕转写")
+    p_run.add_argument("--skip-vision", action="store_true", help="跳过视觉看图（省时，纯字幕消化）")
+    p_run.add_argument("--force", action="store_true", help="不跳过已有产物，重跑")
+    p_run.set_defaults(func=cmd_run)
+
+    p_ing = sub.add_parser("ingest", help="只跑采集（下载视频 + 音频）")
+    p_ing.add_argument("source", help="B站 URL 或 BV 号")
+    p_ing.add_argument("--qn", type=int, default=32)
+    p_ing.set_defaults(func=cmd_ingest)
+
+    p_und = sub.add_parser("understand", help="只跑理解（字幕 + 关键帧 + 视觉）")
+    p_und.add_argument("source", help="源目录 或 B站URL/BV号")
+    p_und.add_argument("--max-frames", type=int, default=5)
+    p_und.add_argument("--max-workers", type=int, default=3)
+    p_und.add_argument("--skip-asr", action="store_true")
+    p_und.add_argument("--skip-vision", action="store_true")
+    p_und.add_argument("--force", action="store_true")
+    p_und.set_defaults(func=cmd_understand)
+
+    p_plan = sub.add_parser("plan", help="只跑消化（字幕 + 视觉 → 草稿计划）")
+    p_plan.add_argument("source", help="源目录 或 B站URL/BV号")
+    p_plan.set_defaults(func=cmd_plan)
+
+    p_ver = sub.add_parser("verify", help="溯源：回 GitHub 取一手资料，纠正草稿计划 + 出机器安装清单")
+    p_ver.add_argument("source", help="源目录 或 B站URL/BV号")
+    p_ver.add_argument("--repo", default=None, help="手动指定 owner/repo（绕过自动搜索）")
+    p_ver.set_defaults(func=cmd_verify)
+
+    p_ded = sub.add_parser("dedup", help="去重：扫本地已装 skill 建基准，比 install_list，判 new/merge/skip")
+    p_ded.add_argument("source", help="源目录 或 B站URL/BV号")
+    p_ded.add_argument(
+        "--skills-dir", action="append", default=None, metavar="DIR",
+        help="追加要扫描的 .claude/skills 目录（可重复；默认已含 ~/.claude/skills）",
+    )
+    p_ded.set_defaults(func=cmd_dedup)
+
+    p_rec_judge = sub.add_parser(
+        "recommend",
+        help="判断步：去重后判「值不值得装」，出 recommend.json（不安装；keyword/manual 不烧 token）",
+    )
+    p_rec_judge.add_argument("source", help="源目录 或 B站URL/BV号")
+    p_rec_judge.add_argument(
+        "--skills-dir", action="append", default=None, metavar="DIR",
+        help="追加扫描目录（默认已含 ~/.claude/skills，与去重同口径）",
+    )
+    p_rec_judge.add_argument(
+        "--mode", choices=["keyword", "manual", "ai"], default="keyword",
+        help="判断模式：keyword=规则打分(默认,无 key) / manual=人工勾选(无 key) / ai=文本模型(烧 token,需在场)",
+    )
+    p_rec_judge.add_argument(
+        "--source-skip", default=None, metavar="REASON",
+        help="整源跳过：手判该源非技能集（如配置商店）否决整源，approved 置空（D19 人定）",
+    )
+    p_rec_judge.add_argument(
+        "--limit", type=int, default=None, metavar="N",
+        help="ai 模式成本控制：只判前 N 条 new 候选（未判到的由 merge 兜底「不值得装」）",
+    )
+    p_rec_judge.set_defaults(func=cmd_recommend)
+
+    p_inst = sub.add_parser(
+        "install", help="安装：照 dedup 判定的 new skill，整目录拷到本地 .claude/skills/ 并登记台账",
+    )
+    p_inst.add_argument("source", help="源目录 或 B站URL/BV号")
+    p_inst.add_argument("--approve", action="store_true", help="真落盘 + 写台账（默认 dry-run，只列计划）")
+    p_inst.add_argument(
+        "--include-deprecated", action="store_true", help="连 deprecated skill 一起装（默认跳过）",
+    )
+    p_inst.add_argument("--target-dir", default=None, help="安装目标目录（默认 ~/.claude/skills）")
+    p_inst.set_defaults(func=cmd_install)
+
+    p_rec = sub.add_parser(
+        "record",
+        help="记录+看板：从台账/清单/去重一手数据代码生成安装记录与看板（只读，不改台账）",
+    )
+    p_rec.add_argument("source", help="源目录 或 B站URL/BV号")
+    p_rec.add_argument(
+        "--skills-dir", action="append", default=None, metavar="DIR",
+        help="追加扫描目录（默认读 dedup.json 的 baseline.skill_dirs，与去重同口径）",
+    )
+    p_rec.set_defaults(func=cmd_record)
+
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
