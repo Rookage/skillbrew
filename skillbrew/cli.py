@@ -236,13 +236,30 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     from . import ingest
 
     cfg = load_config()
-    bvid = ingest.parse_bvid(args.source)
-    src_dir = cfg.data_dir / "sources" / bvid
-    r = ingest.fetch_bilibili(args.source, src_dir, qn=args.qn)
-    print(f"[OK] {r.title}")
-    print(f"     bvid={r.bvid} 时长={r.duration}s")
-    print(f"     视频: {r.video_path} ({r.video_path.stat().st_size // 1024}KB)")
-    print(f"     音频: {r.audio_path} ({r.audio_path.stat().st_size // 1024}KB)")
+    src = args.source
+
+    # 自动识别平台
+    if "bilibili.com" in src or src.startswith("BV"):
+        # B站
+        bvid = ingest.parse_bvid(src)
+        src_dir = cfg.data_dir / "sources" / bvid
+        r = ingest.fetch_bilibili(src, src_dir, qn=args.qn)
+        print(f"[OK] {r.title}")
+        print(f"     bvid={r.bvid} 时长={r.duration}s")
+        print(f"     视频: {r.video_path} ({r.video_path.stat().st_size // 1024}KB)")
+        print(f"     音频: {r.audio_path} ({r.audio_path.stat().st_size // 1024}KB)")
+    elif "douyin.com" in src or src.isdigit():
+        # 抖音
+        video_id = ingest.parse_douyin_id(src) if src.isdigit() else None
+        src_dir = cfg.data_dir / "sources" / f"douyin_{video_id or 'unknown'}"
+        r = ingest.fetch_douyin(src, src_dir)
+        print(f"[OK] {r.title}")
+        print(f"     video_id={r.video_id} 时长={r.duration}s")
+        print(f"     视频: {r.video_path} ({r.video_path.stat().st_size // 1024}KB)")
+        print(f"     音频: {r.audio_path} ({r.audio_path.stat().st_size // 1024}KB)")
+    else:
+        print(f"[ERR] 未识别的平台: {src}")
+        return 1
     return 0
 
 
@@ -350,8 +367,16 @@ def cmd_dedup(args: argparse.Namespace) -> int:
         print(f"[ERR] {src} 没有 install_list.json（先跑 verify）")
         return 1
 
-    # D18：扫本地优先 —— 默认含用户级 ~/.claude/skills，--skills-dir 可追加工作区等目录
-    skill_dirs = [Path.home() / ".claude" / "skills"] + [Path(d) for d in (args.skills_dir or [])]
+    # D18：扫本地优先 —— 默认含用户级 ~/.claude/skills，自动检测当前工作目录的 .claude/skills/
+    skill_dirs = [Path.home() / ".claude" / "skills"]
+    # 自动检测当前工作目录及其父目录的 .claude/skills/（项目级 skill）
+    for parent in [Path.cwd()] + list(Path.cwd().parents):
+        proj_skills = parent / ".claude" / "skills"
+        if proj_skills.exists() and proj_skills not in skill_dirs:
+            skill_dirs.append(proj_skills)
+            break  # 找到最近的一个就停
+    # --skills-dir 可追加其他目录
+    skill_dirs += [Path(d) for d in (args.skills_dir or [])]
 
     print(f"[去重] {src}")
     print(f"   扫描基准目录：{[str(d) for d in skill_dirs]}")
@@ -420,7 +445,14 @@ def cmd_recommend(args: argparse.Namespace) -> int:
     }
 
     # ---- 本机能力画像（D18 动态基准，复用 dedup 扫描口径）----
-    skill_dirs = [Path.home() / ".claude" / "skills"] + [Path(d) for d in (args.skills_dir or [])]
+    skill_dirs = [Path.home() / ".claude" / "skills"]
+    # 自动检测当前工作目录及其父目录的 .claude/skills/（项目级 skill）
+    for parent in [Path.cwd()] + list(Path.cwd().parents):
+        proj_skills = parent / ".claude" / "skills"
+        if proj_skills.exists() and proj_skills not in skill_dirs:
+            skill_dirs.append(proj_skills)
+            break  # 找到最近的一个就停
+    skill_dirs += [Path(d) for d in (args.skills_dir or [])]
     print(f"[判断步] {src}  mode={mode}")
     print(f"   画像扫描目录：{[str(d) for d in skill_dirs]}")
     profile = rec.build_profile(skill_dirs)

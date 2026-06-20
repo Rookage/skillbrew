@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import time
 import urllib.error
 import urllib.parse
@@ -74,9 +75,68 @@ def _get(url: str, *, accept: str = "application/vnd.github+json", timeout: floa
 
 def _api_json(url: str) -> dict:
     status, body = _get(url)
+    if status == 403:
+        # GitHub API 限流，fallback 到 gh CLI（已认证，限流更宽松）
+        return _gh_cli_fallback(url)
     if status != 200:
         raise RuntimeError(f"GitHub API {status} {url}: {body[:200]!r}")
     return json.loads(body)
+
+
+def _gh_cli_fallback(url: str) -> dict:
+    """当 GitHub API 403 限流时，用 gh CLI 替代（已认证，5000 次/小时）。
+
+    支持的 URL 模式：
+    - /repos/{owner}/{repo} → gh repo view owner/repo --json ...
+    - /repos/{owner}/{repo}/git/trees/{branch}?recursive=1 → gh api ...
+    """
+    # 解析 URL 提取 owner/repo/branch
+    m = re.match(rf"{re.escape(API_BASE)}/repos/([^/]+)/([^/]+)(?:/git/trees/([^?]+))?", url)
+    if not m:
+        raise RuntimeError(f"gh CLI fallback 不支持的 URL 模式: {url}")
+
+    owner, repo = m.group(1), m.group(2)
+    branch = m.group(3)
+
+    try:
+        if branch:
+            # /repos/{owner}/{repo}/git/trees/{branch}?recursive=1
+            endpoint = f"/repos/{owner}/{repo}/git/trees/{branch}?recursive=1"
+            result = subprocess.run(
+                ["gh", "api", endpoint],
+                capture_output=True,
+                text=True,
+                timeout=_TIMEOUT
+            )
+        else:
+            # /repos/{owner}/{repo}
+            result = subprocess.run(
+                ["gh", "repo", "view", f"{owner}/{repo}", "--json",
+                 "full_name,html_url,stargazersCount,defaultBranch,description,pushedAt"],
+                capture_output=True,
+                text=True,
+                timeout=_TIMEOUT
+            )
+
+        if result.returncode != 0:
+            raise RuntimeError(f"gh CLI 失败: {result.stderr[:200]}")
+
+        data = json.loads(result.stdout)
+
+        # 统一字段名（gh repo view 和 gh api 返回的字段名不同）
+        if "stargazersCount" in data:
+            data["stargazers_count"] = data.pop("stargazersCount")
+        if "defaultBranch" in data:
+            data["default_branch"] = data.pop("defaultBranch")
+        if "full_name" not in data:
+            data["full_name"] = f"{owner}/{repo}"
+
+        return data
+
+    except FileNotFoundError:
+        raise RuntimeError("gh CLI 未安装或不在 PATH 中，无法 fallback")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"gh CLI 超时（{_TIMEOUT}s）")
 
 
 def _raw_text(url: str) -> str:
@@ -237,6 +297,60 @@ def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
+def _extract_search_keywords(plan: dict) -> list[tuple[str, dict]]:
+    """从 plan 的 summary/capabilities/traced_sources 提取搜索查询。
+
+    返回 [(query, filters), ...]，其中 filters 可包含 stars_min/stars_max。
+    提取策略：
+    - 从 traced_sources.note 提取星数线索（如 "25k 星标"）
+    - 从 summary 提取核心概念（如 "code graph", "knowledge graph"）
+    - 组合成 GitHub 搜索查询 + 星数范围过滤
+    """
+    queries = []
+    summary = plan.get("summary", "").lower()
+
+    # 从 traced_sources 提取星数线索
+    stars_min, stars_max = None, None
+    for ts in plan.get("traced_sources", []):
+        note = ts.get("note", "").lower()
+        # 匹配 "25k 星标" / "28.7k 星" / "25000 stars" 等
+        import re
+        m = re.search(r"(\d+(?:\.\d+)?)\s*k?\s*(?:星|stars?)", note)
+        if m:
+            val = float(m.group(1))
+            if "k" in note[m.start():m.end()]:
+                val *= 1000
+            # 给一个范围：±30%
+            stars_min = int(val * 0.7)
+            stars_max = int(val * 1.3)
+            break
+
+    # 提取核心概念
+    concepts = []
+    if "code graph" in summary or "代码知识图谱" in summary:
+        concepts.append("code graph index")
+    if "knowledge graph" in summary:
+        concepts.append("knowledge graph")
+    if "codegraph" in summary:
+        concepts.append("codegraph")
+
+    # 组合查询
+    for concept in concepts[:2]:  # 最多 2 个查询
+        query = concept
+        filters = {}
+        if stars_min is not None:
+            filters["stars_min"] = stars_min
+        if stars_max is not None:
+            filters["stars_max"] = stars_max
+        queries.append((query, filters))
+
+    # 如果没有提取到概念，fallback 到通用查询
+    if not queries:
+        queries.append(("ai coding tool", {}))
+
+    return queries
+
+
 def _cap_skill_name(cap_name: str) -> str:
     """草稿能力名 'GrillMe：需求澄清追问技能' / 'TDD红绿重构循环技能' → 取可比对的主名。"""
     nm = re.split(r"[:：]", cap_name, maxsplit=1)[0].strip()
@@ -244,7 +358,7 @@ def _cap_skill_name(cap_name: str) -> str:
 
 
 def resolve_repo(
-    draft_repos: list[tuple[str, str]], draft_skill_names: list[str]
+    draft_repos: list[tuple[str, str]], draft_skill_names: list[str], plan: dict | None = None
 ) -> tuple[dict, str]:
     """找出真身仓库，返回 (probe 信息, how_resolved 说明)。不硬编码，靠内容校验。"""
     # 1) 直查草稿里写的 repo
@@ -259,19 +373,97 @@ def resolve_repo(
         if repo.lower() not in seen:
             seen.add(repo.lower())
             seeds.append(repo)
-    if not seeds:
+
+    # 3) Fallback：当 draft_repos 为空时，从 plan 的 summary/capabilities 提取关键词搜索
+    search_queries: list[tuple[str, dict]] = []  # (query, filters)
+    if not seeds and plan:
+        search_queries = _extract_search_keywords(plan)
+
+    if not seeds and not search_queries:
         raise RuntimeError("草稿没有 github repo 线索，无法溯源；请用 --repo owner/repo 指定")
-    targets = {_norm(n) for n in draft_skill_names if _norm(n)}
+    # 只保留长度 >= 3 的 _norm 结果（'ai' 这种太短，无法有效校验）
+    targets = {_norm(n) for n in draft_skill_names if len(_norm(n)) >= 3}
     checked_any = False
     skip_reasons: list[str] = []
+
+    # 处理普通 seeds（来自 draft_repos）
     for seed in seeds:
         q = urllib.parse.quote(seed)
         d = _api_json(f"{API_BASE}/search/repositories?q={q}&sort=stars&per_page={_SEARCH_CANDIDATES}")
-        # 按仓库体积升序：小仓库先查（快），skill 合集通常不大
-        cands = sorted(d.get("items", []), key=lambda c: c.get("size", 0))
+        items = d.get("items", [])
+        if not targets:
+            cands = sorted(items, key=lambda c: c.get("stargazers_count", 0), reverse=True)
+        else:
+            cands = sorted(items, key=lambda c: c.get("size", 0))
+
         for cand in cands:
             co, cr = cand["owner"]["login"], cand["name"]
             branch = cand.get("default_branch", "main")
+
+            if not targets:
+                info = {
+                    "owner": co, "repo": cr, "full_name": cand["full_name"],
+                    "html_url": cand["html_url"], "stars": cand["stargazers_count"],
+                    "default_branch": branch, "description": cand.get("description"),
+                    "pushed_at": cand.get("pushed_at"),
+                }
+                how = f"无点名 skill 可校验；搜 '{seed}' 按星数降序；取星数最高候选 {co}/{cr}（⭐{cand['stargazers_count']}）"
+                return info, how
+
+            try:
+                tree = list_tree(co, cr, branch)
+            except RuntimeError as e:
+                print(f"   [跳过] {co}/{cr}: {str(e)[:120]}", flush=True)
+                skip_reasons.append(f"{co}/{cr}: {str(e)[:80]}")
+                continue
+            checked_any = True
+            skill_names = {_norm(s["name"]) for s in group_skill_dirs(tree)}
+            hits = targets & skill_names
+            if hits:
+                info = {
+                    "owner": co, "repo": cr, "full_name": cand["full_name"],
+                    "html_url": cand["html_url"], "stars": cand["stargazers_count"],
+                    "default_branch": branch, "description": cand.get("description"),
+                    "pushed_at": cand.get("pushed_at"),
+                }
+                how = (
+                    f"草稿 repo 404；搜 '{seed}' 按星排 + 体积升序；命中 {co}/{cr}"
+                    f"（树含点名 skill: {sorted(hits)}）"
+                )
+                return info, how
+
+    # 处理带过滤器的 search_queries（来自 _extract_search_keywords）
+    for query, filters in search_queries:
+        # 构建 GitHub 搜索查询，加上星数范围过滤
+        q_parts = [query]
+        if "stars_min" in filters:
+            q_parts.append(f"stars:>={filters['stars_min']}")
+        if "stars_max" in filters:
+            q_parts.append(f"stars:<={filters['stars_max']}")
+        q = urllib.parse.quote(" ".join(q_parts))
+        d = _api_json(f"{API_BASE}/search/repositories?q={q}&sort=stars&per_page={_SEARCH_CANDIDATES}")
+        items = d.get("items", [])
+
+        # 按星数降序（在星数范围内取最高的）
+        cands = sorted(items, key=lambda c: c.get("stargazers_count", 0), reverse=True)
+
+        for cand in cands:
+            co, cr = cand["owner"]["login"], cand["name"]
+            branch = cand.get("default_branch", "main")
+
+            if not targets:
+                info = {
+                    "owner": co, "repo": cr, "full_name": cand["full_name"],
+                    "html_url": cand["html_url"], "stars": cand["stargazers_count"],
+                    "default_branch": branch, "description": cand.get("description"),
+                    "pushed_at": cand.get("pushed_at"),
+                }
+                stars_range = ""
+                if "stars_min" in filters or "stars_max" in filters:
+                    stars_range = f"（星数范围: {filters.get('stars_min', 0)}-{filters.get('stars_max', '∞')}）"
+                how = f"无点名 skill 可校验；搜 '{query}'{stars_range} 按星数降序；取候选 {co}/{cr}（⭐{cand['stargazers_count']}）"
+                return info, how
+
             try:
                 tree = list_tree(co, cr, branch)
             except RuntimeError as e:
@@ -281,8 +473,8 @@ def resolve_repo(
                 continue
             checked_any = True
             skill_names = {_norm(s["name"]) for s in group_skill_dirs(tree)}
-            hits = targets & skill_names if targets else set()
-            if (targets and hits) or not targets:
+            hits = targets & skill_names
+            if hits:
                 info = {
                     "owner": co, "repo": cr, "full_name": cand["full_name"],
                     "html_url": cand["html_url"], "stars": cand["stargazers_count"],
@@ -291,7 +483,7 @@ def resolve_repo(
                 }
                 how = (
                     f"草稿 repo 404；搜 '{seed}' 按星排 + 体积升序；命中 {co}/{cr}"
-                    + (f"（树含点名 skill: {sorted(hits)}）" if targets else "（无点名 skill 可校验，取最小候选）")
+                    f"（树含点名 skill: {sorted(hits)}）"
                 )
                 return info, how
     if not checked_any:
@@ -480,7 +672,7 @@ def verify(source_dir: Path, *, repo_override: str | None = None, on_progress=No
         draft_repos = [(o, r)]
     draft_skill_names = [_cap_skill_name(c.get("name", "")) for c in plan.get("capabilities", [])]
 
-    info, how = resolve_repo(draft_repos, draft_skill_names)
+    info, how = resolve_repo(draft_repos, draft_skill_names, plan=plan)
     owner, repo, branch = info["owner"], info["repo"], info["default_branch"]
     info["stars_observed_at"] = _now_iso()
     info["how_resolved"] = how

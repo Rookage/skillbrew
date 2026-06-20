@@ -1,7 +1,7 @@
 # 项目章程 PROJECT_CHARTER（核心锚定文件）
 
 > 本文件是项目的"北极星"。每轮讨论后更新，所有开发以此为准，防止改着改着迷路。
-> 状态：执行中 · 第 14 轮（2026-06-20） · B站单源 MVP **顺藤摸瓜到一手仓库并核实✅ + 授权A安装落地✅**（纠错：视频 OCR 的 `mattpockock/claude-skills` 错，真名 `mattpocock/skills`，⭐136,541〔2026-06-20 取数，星数动态非定值〕，全仓 34 个 skill）。产**三层分发文件**：`SKILL_PACK.md`（L1 机器 + L2 人读·可分享）+ `VIDEO_SCRIPT.md`（L3 口语化录像文案）。去重基准实扫纠正：工作区 **25 个 distinct**（pre-install）+ 用户级 1 个（`using-coze-cli`，与工作区重复→distinct 0）；**此前误记"31/0"已纠正**（刻舟求剑）。授权 A 已执行：15 净新增 + tdd 整并进 Python测试技能 → **25→40 distinct**（台账 active=40/merged=1）。**五步流①-⑤全部跑通 + 安装落地**；安装后报告 `POST_INSTALL.md` 已出。**r15：工具化前半段落地✅**——`run` 命令固化"丢链接→看视频→出草稿计划"，跑到草稿即停（刹车，不安装）。**r16：verify 溯源模块落地✅**——把"手动 curl GitHub 纠正 OCR 草稿"固化成 `verify` 子命令，纯 GitHub curl 不耗 LLM 配额，跑通即产机器安装清单 + 就地纠正 plan.json（星数 136,675〔2026-06-20 取数〕，open_questions 5/5 真回填）。**r17：dedup 去重模块落地✅**——把 D18"扫本地优先→再比台账"固化成 `dedup` 子命令，纯本地（磁盘 + 台账 SQLite）不调 LLM、不耗配额、不要 key；三层从严判定（名字命中→skip / 描述共享≥3 个有意义英文词→merge 候选 / 否则 new）。对 BV1UpR9BBEf5 跑通：基准 **41 个 distinct**（磁盘 41 + 台账 41 行 = active40/merged1，与手册已装集逐一对齐）→ 判定 **new=15 / merge=3 / skip=16**（16 skip 正是手册已装的 16 个 mattpocock skill；3 merge 均真·重叠方法论 skill——design-an-interface/improve-codebase-architecture→codebase-design、ubiquitous-language→domain-modeling，留待 install 授权时人工定夺）。初版阈值=2 偏松致 10 个假阳性 merge，收紧为 3 + 剔 skill/agent/file/issue/test 等泛词后纠回。**r18：install 安装模块落地✅（5 步第 4 步，授权门坐这）**——把"授权后整目录拷 + 登记台账"固化成 `install` 子命令：默认 dry-run、`--approve` 才真落盘 + 写台账；纯 GitHub raw + 标准库不调 LLM、不耗配额。修两 bug（install.py `db_path=None` 致 `connect` TypeError；verify.py tree-leak——`type=="tree"` 子目录节点混进 `files[]` 致 raw 404）。`--approve` 实测跑通：dedup new=15 去 2 deprecated → 实装 **13** 个新 skill，台账 **41→54 distinct**（active 40→53 / merged 1=tdd），会话 `before=41/added=13/after=54`。**"你落盘就是什么"核验✅**：磁盘 active distinct **53**（`~/.claude/skills` 14 + 工作区 40，同名重叠 `using-coze-cli` 1 → distinct 53）== 台账 active **53**；仅 `tdd`（merged，by design）台账有行无盘。本次 run 补足手动 run：16 skip + 13 new + 2 deprecated + 3 merge = 34 全仓，无重复安装。教训：dedup 扫**多目录**，磁盘-台账核对须覆盖全部扫描点（曾只查 `~/.claude/skills` 误报"40 行无盘"）
+> 状态：执行中 · 第 24 轮（2026-06-21） · B站单源 MVP **顺藤摸瓜到一手仓库并核实✅ + 授权A安装落地✅**（纠错：视频 OCR 的 `mattpockock/claude-skills` 错，真名 `mattpocock/skills`，⭐136,541〔2026-06-20 取数，星数动态非定值〕，全仓 34 个 skill）。产**三层分发文件**：`SKILL_PACK.md`（L1 机器 + L2 人读·可分享）+ `VIDEO_SCRIPT.md`（L3 口语化录像文案）。去重基准实扫纠正：工作区 **25 个 distinct**（pre-install）+ 用户级 1 个（`using-coze-cli`，与工作区重复→distinct 0）；**此前误记"31/0"已纠正**（刻舟求剑）。授权 A 已执行：15 净新增 + tdd 整并进 Python测试技能 → **25→40 distinct**（台账 active=40/merged=1）。**五步流①-⑤全部跑通 + 安装落地**；安装后报告 `POST_INSTALL.md` 已出。**r15：工具化前半段落地✅**——`run` 命令固化"丢链接→看视频→出草稿计划"，跑到草稿即停（刹车，不安装）。**r16：verify 溯源模块落地✅**——把"手动 curl GitHub 纠正 OCR 草稿"固化成 `verify` 子命令，纯 GitHub curl 不耗 LLM 配额，跑通即产机器安装清单 + 就地纠正 plan.json（星数 136,675〔2026-06-20 取数〕，open_questions 5/5 真回填）。**r17：dedup 去重模块落地✅**——把 D18"扫本地优先→再比台账"固化成 `dedup` 子命令，纯本地（磁盘 + 台账 SQLite）不调 LLM、不耗配额、不要 key；三层从严判定（名字命中→skip / 描述共享≥3 个有意义英文词→merge 候选 / 否则 new）。对 BV1UpR9BBEf5 跑通：基准 **41 个 distinct**（磁盘 41 + 台账 41 行 = active40/merged1，与手册已装集逐一对齐）→ 判定 **new=15 / merge=3 / skip=16**（16 skip 正是手册已装的 16 个 mattpocock skill；3 merge 均真·重叠方法论 skill——design-an-interface/improve-codebase-architecture→codebase-design、ubiquitous-language→domain-modeling，留待 install 授权时人工定夺）。初版阈值=2 偏松致 10 个假阳性 merge，收紧为 3 + 剔 skill/agent/file/issue/test 等泛词后纠回。**r18：install 安装模块落地✅（5 步第 4 步，授权门坐这）**——把"授权后整目录拷 + 登记台账"固化成 `install` 子命令：默认 dry-run、`--approve` 才真落盘 + 写台账；纯 GitHub raw + 标准库不调 LLM、不耗配额。修两 bug（install.py `db_path=None` 致 `connect` TypeError；verify.py tree-leak——`type=="tree"` 子目录节点混进 `files[]` 致 raw 404）。`--approve` 实测跑通：dedup new=15 去 2 deprecated → 实装 **13** 个新 skill，台账 **41→54 distinct**（active 40→53 / merged 1=tdd），会话 `before=41/added=13/after=54`。**"你落盘就是什么"核验✅**：磁盘 active distinct **53**（`~/.claude/skills` 14 + 工作区 40，同名重叠 `using-coze-cli` 1 → distinct 53）== 台账 active **53**；仅 `tdd`（merged，by design）台账有行无盘。本次 run 补足手动 run：16 skip + 13 new + 2 deprecated + 3 merge = 34 全仓，无重复安装。教训：dedup 扫**多目录**，磁盘-台账核对须覆盖全部扫描点（曾只查 `~/.claude/skills` 误报"40 行无盘"）
 
 ---
 
@@ -30,15 +30,16 @@
 ## 3. 系统流程（精炼后）
 
 ```
-① 采集   粘贴素材（视频URL / 文件 / 报告 / 网页）          ← 多模态输入
-② 获取   视频→字幕+关键帧；文件→直读；网页→抓取            ← 真正"看"视频
-③ 溯源   识别引用源头(GitHub/Anthropic/论文)→取一手资料     ← 可选但推荐
-④ 消化   LLM 结构化理解 → 产出"执行计划"(分步、可授权)
-⑤ 审核   用户审计划 → 通过 / 改 / 弃
-⑥ 安装   按步落地为能力产物(Skill/MCP/代码/配置) → 写入台账
-⑦ 去重   与台账比对 → 重复则归并/升级，而非新增
-⑧ 记录   生成 README 式安装记录(可分享、可回滚/移除)
-⑨ 看板   本次能力 + 累加整体能力 → 可视化
+① 采集   粘贴素材（视频URL / 文件 / 报告 / 网页）                 ← 多模态输入
+② 理解   视频→字幕(ASR)+关键帧视觉融合；文件→直读；网页→抓取       ← 真正"看"视频
+③ 消化   LLM 结构化理解 → 产出"执行计划"(分步、可授权)             ← 草稿即停(刹车)
+④ 溯源   识别引用源头(GitHub/Anthropic/论文)→取一手资料、就地纠正草稿  ← 可选但推荐
+⑤ 去重   扫本地已装 + 比台账 → 重复归并/升级，非新增              ← 只判"是否重复"(≠值得装)
+⑥ 判断   给「值得装/不值得装/挑着装/整源跳过」主动建议 → 人定      ← 只判"是否值得装"(D19)
+⑦ 审核   用户审计划+建议 → 通过 / 改 / 弃                         ← 交互门，绝不黑盒自动装(D22)
+⑧ 安装   按步落地为能力产物(Skill/MCP/代码/配置) → 写入台账
+⑨ 记录   生成 README 式安装记录(可分享、可回滚/移除)
+⑩ 看板   本次能力 + 累加整体能力 → 可视化
 ```
 
 ## 4. 关键决策表
@@ -180,6 +181,10 @@ skillbrew/
    - **✅已拍板（2026-06-19，用户："好的，都按照你的计划，我们来执行"）**：**分角色**——文本(消化/计划)=DeepSeek（快、便宜、已充值）；视觉(关键帧看图)=Agnes（唯一已测真看图的官方 API）。这正是 D15 可插拔设计的价值：不同环节各取所长，不赌单一供应商。.env 已拆成 TEXT_*/VISION_* 两组独立配置（DeepSeek 与 Agnes 的 base_url+key 不同，已落地）。Agnes 视觉~5min/张的慢，靠已定的限帧 A+C 缓解。后续 DeepSeek 一旦开放官方 API 视觉，改一行 VISION_* 即可切回。
 
 ## 11. 修订记录
+
+- **2026-06-21 r24**：**§3 系统流程图纠偏**。原图 9 步缺 `recommend`（判断步）、且把「去重」画在「安装」之后，与实现脱节。按实际闭环 `ingest→understand→plan→verify→dedup→recommend→install→record` 重排为 10 步：①采集 ②理解 ③消化 ④溯源 ⑤去重 ⑥判断(recommend) ⑦审核 ⑧安装 ⑨记录 ⑩看板。关键修正：去重(⑤)与判断(⑥)均在安装(⑧)之前；标注 dedup 只判"是否重复"≠recommend 只判"是否值得装"(D19)、审核为交互门绝不黑盒自动装(D22)；「溯源」从消化前移到消化后，对齐 r15-r16 实现（plan 出草稿→verify 就地纠正）。**纯文档纠偏，未改任何决策、未改代码**。
+
+- **2026-06-21 r23**：**skillbrew 上 GitHub 私有仓库 + 全量脱敏复扫通过 + 立「不换 key」规则**。① **推送**：`github.com/Rookage/skillbrew`（PRIVATE），仅代码+文档，`data/` 不传（含 B站真 cookie/本机绝对路径/视频素材，`.gitignore` 整目录排除）；2 个 commit（initial + 脱敏修正）。② **脱敏三关**：(a) 两把真 key（DeepSeek/Agnes）零痕迹；(b) B站 cookie 靠 data/ 整排解决；(c) 本机路径（registry.db 54 条 `~/.coze`）靠 data/ 整排 + HANDOFF.md/`scripts/register_install_a.py` 硬编码路径改通用（`~/.claude/skills`/`<workspace>/.claude/skills`/`ROOT.parent.parent/.claude/skills`）。③ **GitHub 端 fresh-clone 复扫**：远端最新 commit clone 到 /tmp，全维度扫 28 文件 → **干净 28/28 | 警报 0/28 ✅**（维度=两把真 key 完全+指纹、sk-token≥20、ghp_/gh[posr]_/github_pat_、Bearer、AWS AKIA、Slack xox、B站 cookie、本机路径/agent_id）。④ **立新规（用户最高优先级「不想换 API key」，覆盖 §8 旧规与旧记忆「推前重生成 key」）**：脱敏 = `.env` gitignore + 提交零痕迹 + fresh-clone 复扫，**不靠换 key**；两把真 key 永不进仓库、永不轮换。⑤ 凭据卫生：GitHub PAT 临时登录、用后即焚（shred 临时文件 + 删 `~/.config/gh/hosts.yml` + remote URL 确认无 token）；用户应去 GitHub 撤销该 PAT。⑥ 四档案同步：HANDOFF.md（顶部新增节 + §8 重写）、git-staged-checkpoint.md（整篇重写）、skillbrew-step5-handoff.md（3 处）、MEMORY.md（2 行索引）。**下一步待用户确认**：全量 ai 判断跑（~84 次 DeepSeek 调用）/ R1 调度器（v2+）。**未改任何已定决策**。
 
 - **2026-06-20 r22**：**用户提 2 条新决策 D21（模型前置）+ D22（反盲盒）+ 1 条延后需求 R1（能力调度器）**，均不改已定决策、仅新增。① **D21 模型前置·文本必备·视觉可选优雅降级**——用户发现逻辑 bug：要跑本工具须两种 LLM 能力（文本+图片识别），若用户无 DeepSeek/Agnes 是否整个动不了？定性为：**前置条件=至少 1 个大模型**（无 LLM 则消化步骤跑不动、工具完全不可用）；**任一品牌文本模型皆可**（所有 LLM 都有文字能力，不写死 DeepSeek，契合 D15/D16 通用化）；**视觉为可选**——无视觉能力时**不卡死**，降级「视频转语音→语音转文字」路径（识别质量较低、不能抽关键帧看画面），主动建议换多模态模型但**不阻断**；配置=text_model(必填)+vision_model(可选)。区别于 D13（D13=本机具体选型 DeepSeek+Agnes，D21=通用前置与降级规约）。② **D22 反盲盒·透明可追**——直击「AI 全黑盒决定、人说好了但看不到、没安全感」的恐惧：① 消化素材后**必须**与人类交互确认才安装（强化 D19/D20 交互门，绝不黑盒自动装）；② 安装时说明每个功能**是什么**；③ 可视化报告须含「装了什么 / 新增哪些能力 / **以后怎么调用**」——尤其「调用方式」（@skill 名 / 触发提示词），让装了的能力能被找回、能被调用。③ **R1 延后需求（v2+，新增 §9.1）**——用户痛点：skill 装了一堆但 Agent 不会自动调用，须 `@skill` 或读其 prompt 才触发，否则装 1000 个也不调。定性为与「安装」正交的另一层「调度器」（执行前扫已装能力→判该加载哪些→加载→执行），非 skillbrew 安装器职责；MVP 仅靠 D22 报告带「调用方式」让人工/Agent 手动调，完整自动调度留 v2+ 独立组件。**下一步仍待用户确认**：recommend 判断步架构（我已提案 5 点：recommend 3 模式可切 ai/keyword/manual / 安装建议清单+交互菜单 / 复用 dedup 扫描出本机能力画像 / 看板新状态+finding-2 折入 / doctor 自检），用户尚未回「顺我就开写」。**未改任何已定决策**。
 
