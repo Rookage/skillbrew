@@ -26,9 +26,8 @@ from skillbrew.registry import (  # noqa: E402
     upsert_skill,
 )
 
-WORKSPACE_SKILLS = Path(
-    "./.claude/skills"
-)
+# 项目级 skills 目录（Coze 环境为 <workspace>/.claude/skills；按你的环境调整）
+WORKSPACE_SKILLS = ROOT.parent.parent / ".claude" / "skills"
 
 # 本次 install A 新增的 15 个 Matt skill（目录名）；tdd 是整并不算新增目录
 MATT_NEW = {
