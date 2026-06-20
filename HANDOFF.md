@@ -1,7 +1,72 @@
 # HANDOFF · skillbrew Step 5（r19）✅ + r20 Path A✅ + recommend 判断步积木 A–G 全✅（含 D）→ recommend 闭环全通
 
 > 写给明天的我自己：从这份文档 + 记忆里的 `skillbrew-step5-handoff` 指针加载断点，继续往前推进。
-> 落笔日期 2026-06-20（深夜补 r20；r21/r22/积木A–G/D 后续补）。**最新节 = 顶部「✅ D22 调用方式渲染完成（record.py）」**（用户诉求：先把 skillbrew 代码写完别拖；record 看板新增「怎么调用装好的技能」段，补齐 recommend.py:17-18 委派的 D22，8 零token 测试 + 零回归 diff + 幂等 全绿）。其下「✅ 技能可见性修复（本机两抽屉）」（已修+终检绿）、「积木 D 完成」「积木 A–G 纯本地部分完成」「r22/r21 更新」「r20 完成总结」为历史。**recommend 判断步 7 块积木全部完成、自测绿**；ingest→understand→plan→verify→dedup→recommend→install→record 闭环全通。下文 §1-§9 为 r19 落地规格留档（历史记录，勿再照抄执行）。
+> 落笔日期 2026-06-20（深夜补 r20；r21/r22/积木A–G/D 后续补；GitHub 上传补）。**最新节 = 顶部「✅ 已推 GitHub 私有仓库 + 全量脱敏复扫通过」**（已推 `Rookage/skillbrew` 私有库，data/ 不传，脱敏三关全过，GitHub 端 fresh-clone 复扫 28/28 零警报；用户立「不换 key」规则——脱敏靠 .env 排除+零痕迹，覆盖旧 §8 推前重生成 key）。其下「✅ D22 调用方式渲染完成（record.py）」（record 看板新增「怎么调用装好的技能」段，补齐 recommend.py:17-18 委派的 D22，8 零token 测试 + 零回归 diff + 幂等 全绿）。其下「✅ 技能可见性修复（本机两抽屉）」（已修+终检绿）、「积木 D 完成」「积木 A–G 纯本地部分完成」「r22/r21 更新」「r20 完成总结」为历史。**recommend 判断步 7 块积木全部完成、自测绿**；ingest→understand→plan→verify→dedup→recommend→install→record 闭环全通。下文 §1-§9 为 r19 落地规格留档（历史记录，勿再照抄执行）。
+
+---
+
+## §0 重启触发词 + 自我总结（2026-06-21 r24 收尾，写给重启后的我自己）—— **第一眼必读**
+
+### 🔑 触发词 = 「继续执行」（这四个字，用户原话约定）
+
+- 用户说「继续执行」**之前**：我只做文档/记录，**不动手写代码**，不问废话。
+- 用户说「继续执行」**之后**，我按此流程加载再开干：
+  1. Read 本 §0 段 + `PROJECT_CHARTER.md` 全文（北极星 + 决策表 D1–D22 + §11 修订记录）。
+  2. 记忆已通过 `MEMORY.md` 自动注入；重点指针 `skillbrew-step5-handoff`。
+  3. `cd /root/.coze/agents/7648652962088370459/workspace/ai-self-evolution/skillbrew`，确认 `python -c "from skillbrew import cli"` 可导入。
+  4. 看下方「立即待办」，**直接接着干，不重复确认已完成的事**。
+- 触发词只有「继续执行」这四个字算数；其他表述（"继续""接着做"等）不算，按普通对话回应。
+
+### 核心目标检查：**在轨道上 ✅，没跑偏**
+
+**北极星**（PROJECT_CHARTER §0）：一个"AI 能力包管理器"——丢素材进去→自动消化→AI 可执行计划→授权安装→真实能力（Skill/MCP/代码/配置）+ 可去重/可累加/可视化台账。开源、本地优先。
+
+**对照检查**：
+- 闭环管线 `ingest→understand→plan→verify→dedup→recommend→install→record` —— **8 个模块全部落地成 CLI**（`skillbrew/` 下 12 个 .py：cli/config/dedup/ingest/install/llm/plan/recommend/record/registry/understand/verify）。✅
+- r21–r22 新增 D19/D20/D21/D22 四条决策（判断先行/挑着买/模型前置/反盲盒）—— 全是往"帮人判断、反盲盒、挑着买"走，跟初心一致。✅
+- r23 = GitHub 私有库推送 + 脱敏复扫 28/28 干净 + 立「不换 key」规则。✅ 分发里程碑。
+- r24 = §3 流程图纠偏（补 recommend 步、调去重/安装顺序），纯文档。✅ 补文档债。
+
+**唯一要警觉的（待办，非跑偏）**：D20「挑着买」**方向已定、代码没落地**——install 现在仍是 `copy_whole_dir`（整目录拷），还不支持单组件选装/购物车/npx。下个配置商店类源（如 davila7 那 870 组件）现在的 install 跑不动。
+
+### 当前状态快照（r24 末，已核实）
+
+- **MVP COMPLETE**：B站单源闭环跑通。台账 active=53 / merged=1（distinct=54），磁盘 53==台账 53 ✅。
+- **两个源已跑**：BV1UpR9BBEf5（mattpocock/skills，真装 13 个）/ BV1Kj9zBWEjS（davila7，dry-run 未装，recommend 判"整源跳过"）。
+- **代码已上 GitHub**：`Rookage/skillbrew` 私有库，2 个 commit（c901808 initial + abecc40 脱敏修正），脱敏 28/28 干净。
+- **⚠️ recommend 模块已全部写完**（`recommend.py` 618 行 + `tests/test_judge_ai_mock.py` 7/7 绿 + `tests/test_record_d22.py` 8/8 绿，含 ai 模式积木 D 三层验证）。
+  - **重要纠正**：我 r24 跟用户说"recommend 还只是设计待定没写代码"——**说错了**，那是拿章程 r21/r22 旧记录的过时说法。实际 recommend 在 r20–r21 期间已编码完成（HANDOFF「✅ 积木 D 完成」「✅ recommend 判断步积木 A–G」两节为证）。**重启后别再犯这个错。**
+- **文档债（待补，非阻塞）**：PROJECT_CHARTER §11 修订记录**缺两条**——① 无 r20 条目（新源 BV1Kj9zBWEjS 回归 + verify backfill 通用化）；② 无 recommend 模块编码条目（积木 A–G 完成只记在 HANDOFF，没进章程 §11）。章程 §11 现在是 r23→r22→r21→r19，跳了 r20。
+
+### 立即待办（按优先级，**等用户「继续执行」点头才动代码**）
+
+1. **recommend 已写完 → 真正的下一步分叉**（用户说「继续执行」后我推荐一条、等拍板）：
+   - (a) **全量 ai 判断跑**：davila7 源 832 new × 10/批 ≈ 84 次 DeepSeek 调用，烧 token，须用户在场监控（D22 透明 + 随时可停）；
+   - (b) **D20「挑着买」架构落地**：install 支持单组件选装/购物车/npx，替换 copy_whole_dir（功能活，最贴"D20 方向已定但没落地"）；
+   - (c) **R1 调度器**（v2+，"装了不自动调用"痛点，§9.1）；
+   - (d) 新源回归。
+2. **补文档债**（纯文档，低风险，可顺手）：PROJECT_CHARTER §11 补 r20 条目 + recommend 编码条目，让章程与代码对齐。
+3. **【安全常驻】**：两把真 key（DeepSeek len=35 / Agnes len=51）永不进仓库、永不轮换（用户最高优先级「不想换 API key」）；GitHub PAT 用后即焚——**用户应去 GitHub 撤销 `ghp_8NNg...` 那个 PAT**（r23 已提醒，可能还没撤，重启后可再确认）。
+4. **【LoopGuard 常驻】**：`TaskUpdate` 在 Coze harness 吞参数 → **禁用**，任务对账走文字（§7.1）；2 次同错 STOP-INSPECT-ROUTE、3 次轮回终止。
+
+---
+
+## ✅ 已推 GitHub 私有仓库（Rookage/skillbrew）+ 全量脱敏复扫通过（2026-06-20）
+
+**用户诉求**：skillbrew 上 GitHub 私有仓库，只放代码+文档，data/ 不传；且「**不想换 API key**」——脱敏全靠 .env 排除 + 零痕迹复扫，不靠换 key。要求上 GitHub 做完整复扫，确认每一行已脱敏。
+
+**已落地**：
+- 仓库：`github.com/Rookage/skillbrew`（PRIVATE）。两个 commit：`c901808`（initial，28 文件）+ `abecc40`（脱敏修正）。
+- 仓库内容 = 代码 + 文档（PROJECT_CHARTER/HANDOFF/.env.example 等），**不含 data/**（`.gitignore` 已排除整目录 `data/`——data/ 含 B站真 cookie + 本机绝对路径 + 视频素材）。
+- 脱敏三关全过：① 两把真 key（DeepSeek len=35 / Agnes len=51）零痕迹（不在任何 data/registry.db）；② B站 cookie 靠 data/ 整排解决；③ 本机路径（registry.db 54 条 `/root/.coze`）靠 data/ 整排解决，HANDOFF.md + `scripts/register_install_a.py` 的硬编码本机路径改通用（`~/.claude/skills`、`<workspace>/.claude/skills`、`ROOT.parent.parent/.claude/skills`）。
+- **GitHub 端复扫**：从远端 fresh-clone 最新 commit（abecc40）到 /tmp，全维度扫 28 文件 → **干净 28/28 | 警报 0/28 ✅**。维度：两把真 key 完全+指纹（首4尾3同长）、sk-token≥20、`ghp_/gh[posr]_/github_pat_`、Bearer、AWS AKIA、Slack xox、B站 cookie、本机路径/agent_id。
+- 凭据卫生：PAT 临时登录、用后即焚（临时文件 shred + 删 `~/.config/gh/hosts.yml` + remote URL 确认无 token）。**用户应在 GitHub 撤销该 PAT**（已提醒）。
+
+**规则确立（覆盖本文件 §8 旧规则与旧记忆 `git-staged-checkpoint` 里「推前重生成 key」）**：脱敏 = `.env` gitignore + 零痕迹复扫，**不换 key**。两把真 key 永不进仓库、永不轮换。
+
+**下一步（未动，等拍板）**：全量 ai 判断跑（~84 次 DeepSeek 调用）；R1 调度器（v2+）。
+
+---
 
 ## ✅ D22 调用方式渲染完成（record.py，2026-06-20，用户诉求「先把代码写完别拖」）
 
@@ -501,9 +566,10 @@ ls data/sources/BV1UpR9BBEf5/  # 应同时有 RECORD.md DASHBOARD.md POST_INSTAL
 
 ## 8. 安全约束（始终有效，别忘了）
 
-- 推 GitHub 前**必须**在平台控制台重新生成 DeepSeek 和 Agnes 的 key。
+- **脱敏不靠换 key**（用户最高优先级约束「不想换 API key」，覆盖本节早期「推前重生成 key」）：推 GitHub 的安全 = `.env` gitignore（永不进仓库）+ 提交零 key 痕迹（fresh-clone 全维度复扫确认）+ 零本机路径。**两把真 key（DeepSeek / Agnes）永不进仓库、永不轮换。**
 - `.env` 保持 gitignored，**禁止**提交或日志打印任何 key。
 - record 是只读命令，理论上不碰 key —— 但跑回归测试时若涉及 run/ingest 会用到，注意别在日志/提交里泄露。
+- GitHub PAT 用后即焚（临时登录、用完 shred 临时文件 + 删 `~/.config/gh/hosts.yml` + 确认 remote URL 无 token）；用完应去 GitHub 撤销该 PAT。
 
 ---
 
