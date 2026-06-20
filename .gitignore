@@ -1,0 +1,19 @@
+# === 密钥 / 本地配置 —— 永不进仓库（D14 安全脱敏）===
+.env
+.env.local
+.env.*.local
+*.key
+secrets/
+
+# === Python ===
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# === 数据 / 产物（本机跑出来的数据：含 B站登录cookie/本机绝对路径/视频素材，整目录不进仓库）===
+data/
+*.log
