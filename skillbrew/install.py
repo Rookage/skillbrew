@@ -368,6 +368,10 @@ _PIP_MIRROR_ARGS = [
     "--trusted-host", "mirrors.aliyun.com",
 ]
 
+# 装依赖给宽裕超时：重依赖（torch/moviepy/faster-whisper 等）装包远慢于网络探测，
+# _TIMEOUT（30s）系给 GitHub API 之类快探用的；这里放大并 catch 超时降级，不崩 install。
+_DEPS_INSTALL_TIMEOUT = _TIMEOUT * 40  # 1200s ≈ 20min，阿里云镜像下够装一坨重依赖
+
 
 def _detect_deps_method(clone_dir: Path) -> str:
     """探测克隆目录里的依赖清单类型，决定装依赖走哪条路。
@@ -387,7 +391,9 @@ def _detect_deps_method(clone_dir: Path) -> str:
 def _install_repo_deps(clone_dir: Path, method: str) -> dict:
     """按探测到的依赖清单装依赖（阿里云镜像防 hang）。返回 {installed, detail}。
 
-    装依赖失败**不抛**——克隆已成功，依赖可后补；detail 透传 stderr 头供诊断。
+    装依赖失败**不抛**——克隆已成功，依赖可后补；超时也**不抛**：catch
+    ``TimeoutExpired`` 降级为 ``installed=False``（重依赖如 torch/moviepy 装包慢，
+    给宽裕 ``_DEPS_INSTALL_TIMEOUT``，仍超时则留待后补）。detail 透传 stderr 头供诊断。
     """
     if method == "none":
         return {"installed": False, "detail": "未发现依赖清单，跳过装依赖"}
@@ -395,22 +401,24 @@ def _install_repo_deps(clone_dir: Path, method: str) -> dict:
         npm = shutil.which("npm")
         if not npm:
             return {"installed": False, "detail": "发现 package.json 但本机无 npm，跳过（可后补）"}
-        proc = subprocess.run([npm, "install"], cwd=clone_dir,
-                              capture_output=True, text=True, timeout=_TIMEOUT * 10)
-        ok = proc.returncode == 0
-        return {"installed": ok,
-                "detail": f"npm install {'成功' if ok else '失败'}: {(proc.stderr or proc.stdout).strip()[:200]}"}
-    # pip 系：requirements.txt 直接 -r；pyproject.toml 装当前包
-    pip_cmd = [sys.executable, "-m", "pip", "install"]
-    if method == "pip-requirements":
-        pip_cmd += ["-r", "requirements.txt"] + _PIP_MIRROR_ARGS
-    else:  # pip-pyproject
-        pip_cmd += ["."] + _PIP_MIRROR_ARGS
-    proc = subprocess.run(pip_cmd, cwd=clone_dir,
-                          capture_output=True, text=True, timeout=_TIMEOUT * 10)
+        cmd, label = [npm, "install"], "npm install"
+    else:
+        # pip 系：requirements.txt 直接 -r；pyproject.toml 装当前包
+        pip_cmd = [sys.executable, "-m", "pip", "install"]
+        if method == "pip-requirements":
+            pip_cmd += ["-r", "requirements.txt"] + _PIP_MIRROR_ARGS
+        else:  # pip-pyproject
+            pip_cmd += ["."] + _PIP_MIRROR_ARGS
+        cmd, label = pip_cmd, "pip install"
+    try:
+        proc = subprocess.run(cmd, cwd=clone_dir, capture_output=True,
+                              text=True, timeout=_DEPS_INSTALL_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return {"installed": False,
+                "detail": f"{label} 超时（{_DEPS_INSTALL_TIMEOUT:.0f}s），克隆已成功、依赖可后补"}
     ok = proc.returncode == 0
     return {"installed": ok,
-            "detail": f"pip install {'成功' if ok else '失败'}: {(proc.stderr or proc.stdout).strip()[:200]}"}
+            "detail": f"{label} {'成功' if ok else '失败'}: {(proc.stderr or proc.stdout).strip()[:200]}"}
 
 
 def _install_repo(conn, item: dict, decision: dict,
