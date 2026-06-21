@@ -394,6 +394,10 @@ def _install_repo_deps(clone_dir: Path, method: str) -> dict:
     装依赖失败**不抛**——克隆已成功，依赖可后补；超时也**不抛**：catch
     ``TimeoutExpired`` 降级为 ``installed=False``（重依赖如 torch/moviepy 装包慢，
     给宽裕 ``_DEPS_INSTALL_TIMEOUT``，仍超时则留待后补）。detail 透传 stderr 头供诊断。
+
+    distutils 冲突自愈：云电脑上 apt 装的 distutils 包（如 blinker 1.4）会卡住 pip
+    卸载——报 ``uninstall-distutils-installed-package``，首次失败若命中该错误，自动
+    加 ``--ignore-installed`` 重试一次（不重试会静默退到"依赖待补"，明明能装）。
     """
     if method == "none":
         return {"installed": False, "detail": "未发现依赖清单，跳过装依赖"}
@@ -402,23 +406,55 @@ def _install_repo_deps(clone_dir: Path, method: str) -> dict:
         if not npm:
             return {"installed": False, "detail": "发现 package.json 但本机无 npm，跳过（可后补）"}
         cmd, label = [npm, "install"], "npm install"
-    else:
-        # pip 系：requirements.txt 直接 -r；pyproject.toml 装当前包
-        pip_cmd = [sys.executable, "-m", "pip", "install"]
-        if method == "pip-requirements":
-            pip_cmd += ["-r", "requirements.txt"] + _PIP_MIRROR_ARGS
-        else:  # pip-pyproject
-            pip_cmd += ["."] + _PIP_MIRROR_ARGS
-        cmd, label = pip_cmd, "pip install"
-    try:
-        proc = subprocess.run(cmd, cwd=clone_dir, capture_output=True,
-                              text=True, timeout=_DEPS_INSTALL_TIMEOUT)
-    except subprocess.TimeoutExpired:
+        try:
+            proc = subprocess.run(cmd, cwd=clone_dir, capture_output=True,
+                                  text=True, timeout=_DEPS_INSTALL_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            return {"installed": False,
+                    "detail": f"{label} 超时（{_DEPS_INSTALL_TIMEOUT:.0f}s），克隆已成功、依赖可后补"}
+        ok = proc.returncode == 0
+        return {"installed": ok,
+                "detail": f"{label} {'成功' if ok else '失败'}: {(proc.stderr or proc.stdout).strip()[:200]}"}
+
+    # pip 系：requirements.txt 直接 -r；pyproject.toml 装当前包
+    base = [sys.executable, "-m", "pip", "install"]
+    if method == "pip-requirements":
+        base += ["-r", "requirements.txt"]
+    else:  # pip-pyproject
+        base += ["."]
+    label = "pip install"
+
+    def _run(extra_args):
+        """跑一次 pip install；超时返回 None（调用方单独处理，不抛）。"""
+        try:
+            return subprocess.run(base + extra_args + _PIP_MIRROR_ARGS, cwd=clone_dir,
+                                  capture_output=True, text=True,
+                                  timeout=_DEPS_INSTALL_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            return None
+
+    proc = _run([])
+    if proc is None:
         return {"installed": False,
                 "detail": f"{label} 超时（{_DEPS_INSTALL_TIMEOUT:.0f}s），克隆已成功、依赖可后补"}
-    ok = proc.returncode == 0
-    return {"installed": ok,
-            "detail": f"{label} {'成功' if ok else '失败'}: {(proc.stderr or proc.stdout).strip()[:200]}"}
+    if proc.returncode == 0:
+        return {"installed": True, "detail": f"{label} 成功"}
+
+    # 失败：命中 distutils 卸载冲突则 --ignore-installed 自愈重试一次
+    err = (proc.stderr or proc.stdout or "")
+    if "distutils" in err or "uninstall" in err:
+        proc2 = _run(["--ignore-installed"])
+        if proc2 is None:
+            return {"installed": False,
+                    "detail": f"{label} 重试超时（{_DEPS_INSTALL_TIMEOUT:.0f}s），克隆已成功、依赖可后补"}
+        if proc2.returncode == 0:
+            return {"installed": True,
+                    "detail": f"{label} 成功（命中 distutils 卸载冲突，--ignore-installed 重试通过）"}
+        err2 = (proc2.stderr or proc2.stdout or "").strip()[:200]
+        return {"installed": False,
+                "detail": f"{label} 失败（--ignore-installed 重试仍失败）: {err2}"}
+    return {"installed": False,
+            "detail": f"{label} 失败: {err.strip()[:200]}"}
 
 
 def _install_repo(conn, item: dict, decision: dict,
