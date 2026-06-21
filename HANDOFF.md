@@ -44,7 +44,7 @@
 
 > **r25 已交付边界全 GREEN**：MCP 形态端到端支持 + 抖音闭环 install dry-run + record + B站 Skill 回归 5/5 + commit/push GitHub 不换 key（fresh-clone 零痕迹 0/0）。下述为未决项。
 
-1. **真装 install --approve** ⏳ = 单独授权步骤，**待用户拍板**（改 `~/.claude.json` 是 outward-facing 有后果，章程 D19「授权后安装」）。抖音 5 MCP 经 `claude mcp add -s user` 注册；须先 `export SKILLBREW_CLAUDE_BIN=<bundled-claude-binary>`（config.claude_bin() 现是 env→which→None 三级，不硬编码 bundled）；github 需 PAT 跳过待凭证、filesystem 需指定 <DIRS>、playwright 首跑下载内核。真装前每步告知获同意。
+1. **真装 install --approve** ⏳ = 单独授权步骤，**待用户拍板**（改 `~/.claude.json` 是 outward-facing 有后果，章程 D19「授权后安装」）。抖音 5 MCP 经 `claude mcp add -s user` 注册；须先 `export SKILLBREW_CLAUDE_BIN=<本机 bundled claude 二进制路径>`（具体路径见本地记忆 `skillbrew-step5-handoff`/`coze-env-skill-drawer`，不入仓库；config.claude_bin() 现是 env→which→None 三级，不硬编码 bundled）；github 需 PAT 跳过待凭证、filesystem 需指定 <DIRS>、playwright 首跑下载内核。真装前每步告知获同意。
 2. **装完发邮件** ⏳（功能说明 + 视频话术 + PPT简报，见记忆 `feedback-install-report-email`）——真装完成后才发。
 3. **下一功能分叉**（非阻塞，等拍板）：
    - (a) 全量 ai 判断跑（davila7 源 832 new × 10/批 ≈ 84 次 DeepSeek 调用，烧 token，须用户在场监控）；
