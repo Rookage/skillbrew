@@ -5,7 +5,7 @@
 
 ---
 
-## §0 重启触发词 + 自我总结（2026-06-21 r24 收尾，写给重启后的我自己）—— **第一眼必读**
+## §0 重启触发词 + 自我总结（2026-06-21 r25 收尾，写给重启后的我自己）—— **第一眼必读**
 
 ### 🔑 触发词 = 「继续执行」（这四个字，用户原话约定）
 
@@ -26,28 +26,34 @@
 - r21–r22 新增 D19/D20/D21/D22 四条决策（判断先行/挑着买/模型前置/反盲盒）—— 全是往"帮人判断、反盲盒、挑着买"走，跟初心一致。✅
 - r23 = GitHub 私有库推送 + 脱敏复扫 28/28 干净 + 立「不换 key」规则。✅ 分发里程碑。
 - r24 = §3 流程图纠偏（补 recommend 步、调去重/安装顺序），纯文档。✅ 补文档债。
+- r25 = MCP 形态端到端支持（D2 落地）+ 抖音 6 MCP 视频闭环 install dry-run + record + B站 Skill 回归 5/5 + commit/push GitHub 不换 key（fresh-clone 零痕迹 0/0）。✅ 形态里程碑——skillbrew 不再只是 Skill 加载器。
 
 **唯一要警觉的（待办，非跑偏）**：D20「挑着买」**方向已定、代码没落地**——install 现在仍是 `copy_whole_dir`（整目录拷），还不支持单组件选装/购物车/npx。下个配置商店类源（如 davila7 那 870 组件）现在的 install 跑不动。
 
-### 当前状态快照（r24 末，已核实）
+### 当前状态快照（r25 末，已核实）
 
-- **MVP COMPLETE**：B站单源闭环跑通。台账 active=53 / merged=1（distinct=54），磁盘 53==台账 53 ✅。
-- **两个源已跑**：BV1UpR9BBEf5（mattpocock/skills，真装 13 个）/ BV1Kj9zBWEjS（davila7，dry-run 未装，recommend 判"整源跳过"）。
-- **代码已上 GitHub**：`Rookage/skillbrew` 私有库，2 个 commit（c901808 initial + abecc40 脱敏修正），脱敏 28/28 干净。
+- **MVP COMPLETE + MCP 形态端到端**：B站 Skill 闭环 + 抖音 MCP 闭环均跑通。台账 active=56 / merged=1（distinct=57），磁盘 56==台账 56 ✅。
+- **已跑源**：BV1UpR9BBEf5（mattpocock/skills，真装 13）/ BV1Kj9zBWEjS（davila7，dry-run，recommend 判"整源跳过"）/ **douyin_7650401218518387995（抖音 6 MCP，dry-run 未真装，本源会话 0 次）**/ BV1iwLu6oEdz（真装 1）/ douyin_7644514256800550170（2 个）。
+  - **⚠️ 漂移注（已核实）**：台账 56 active / 3 sessions，比 r24 基线（53/2）多——增量 = BV1iwLu6oEdz 一次真装 --approve（session 3，2026-06-21T02:48，54→55，+1）+ douyin_7644514256800550170（2 个，**install_sessions 表无对应行**=日志缺口非 ledger bug）。两源磁盘均有完整 artifacts（真跑过）；registry 自洽（record 56==56 ✅）。BV1iwLu6oEdz / douyin_7644514256800550170 触发时机已不可考（summary 未载），若非预期可查 install_sessions 第 3 行 + 该两源 RECORD.md。
+- **代码已上 GitHub**：`Rookage/skillbrew` 私有库，7 个 commit（c901808→abecc40→f40df06→bc95341→ce0d5f6→684935a→591c073），脱敏 fresh-clone 零痕迹 0/0。
 - **⚠️ recommend 模块已全部写完**（`recommend.py` 618 行 + `tests/test_judge_ai_mock.py` 7/7 绿 + `tests/test_record_d22.py` 8/8 绿，含 ai 模式积木 D 三层验证）。
   - **重要纠正**：我 r24 跟用户说"recommend 还只是设计待定没写代码"——**说错了**，那是拿章程 r21/r22 旧记录的过时说法。实际 recommend 在 r20–r21 期间已编码完成（HANDOFF「✅ 积木 D 完成」「✅ recommend 判断步积木 A–G」两节为证）。**重启后别再犯这个错。**
 - **文档债（待补，非阻塞）**：PROJECT_CHARTER §11 修订记录**缺两条**——① 无 r20 条目（新源 BV1Kj9zBWEjS 回归 + verify backfill 通用化）；② 无 recommend 模块编码条目（积木 A–G 完成只记在 HANDOFF，没进章程 §11）。章程 §11 现在是 r23→r22→r21→r19，跳了 r20。
 
 ### 立即待办（按优先级，**等用户「继续执行」点头才动代码**）
 
-1. **recommend 已写完 → 真正的下一步分叉**（用户说「继续执行」后我推荐一条、等拍板）：
-   - (a) **全量 ai 判断跑**：davila7 源 832 new × 10/批 ≈ 84 次 DeepSeek 调用，烧 token，须用户在场监控（D22 透明 + 随时可停）；
-   - (b) **D20「挑着买」架构落地**：install 支持单组件选装/购物车/npx，替换 copy_whole_dir（功能活，最贴"D20 方向已定但没落地"）；
-   - (c) **R1 调度器**（v2+，"装了不自动调用"痛点，§9.1）；
+> **r25 已交付边界全 GREEN**：MCP 形态端到端支持 + 抖音闭环 install dry-run + record + B站 Skill 回归 5/5 + commit/push GitHub 不换 key（fresh-clone 零痕迹 0/0）。下述为未决项。
+
+1. **真装 install --approve** ⏳ = 单独授权步骤，**待用户拍板**（改 `~/.claude.json` 是 outward-facing 有后果，章程 D19「授权后安装」）。抖音 5 MCP 经 `claude mcp add -s user` 注册；须先 `export SKILLBREW_CLAUDE_BIN=<bundled-claude-binary>`（config.claude_bin() 现是 env→which→None 三级，不硬编码 bundled）；github 需 PAT 跳过待凭证、filesystem 需指定 <DIRS>、playwright 首跑下载内核。真装前每步告知获同意。
+2. **装完发邮件** ⏳（功能说明 + 视频话术 + PPT简报，见记忆 `feedback-install-report-email`）——真装完成后才发。
+3. **下一功能分叉**（非阻塞，等拍板）：
+   - (a) 全量 ai 判断跑（davila7 源 832 new × 10/批 ≈ 84 次 DeepSeek 调用，烧 token，须用户在场监控）；
+   - (b) D20「挑着买」架构落地（install 支持单组件选装/购物车/npx，替换 copy_whole_dir；配置商店类源如 davila7 现跑不动）；
+   - (c) R1 调度器（v2+，"装了不自动调用"痛点，§9.1）；
    - (d) 新源回归。
-2. **补文档债**（纯文档，低风险，可顺手）：PROJECT_CHARTER §11 补 r20 条目 + recommend 编码条目，让章程与代码对齐。
-3. **【安全常驻】**：两把真 key（DeepSeek len=35 / Agnes len=51）永不进仓库、永不轮换（用户最高优先级「不想换 API key」）；GitHub PAT 用后即焚——**用户应去 GitHub 撤销 `<PAT前缀>` 那个 PAT**（r23 已提醒，可能还没撤，重启后可再确认）。
-4. **【LoopGuard 常驻】**：`TaskUpdate` 在 Coze harness 吞参数 → **禁用**，任务对账走文字（§7.1）；2 次同错 STOP-INSPECT-ROUTE、3 次轮回终止。
+4. **补文档债**（纯文档，低风险，可顺手）：PROJECT_CHARTER §11 补 r20 条目 + recommend 编码条目 + r25 MCP 支持条目。
+5. **【安全常驻】**：两把真 key（DeepSeek len=35 / Agnes len=51）永不进仓库、永不轮换（用户最高优先级「不想换 API key」）；GitHub PAT 用后即焚——**用户应去 GitHub 撤销 `<PAT前缀>` 那个 PAT**（r23 已提醒，可能还没撤，重启后可再确认）。
+6. **【LoopGuard 常驻】**：`TaskUpdate` 在 Coze harness 吞参数 → **禁用**，任务对账走文字（§7.1）；2 次同错 STOP-INSPECT-ROUTE、3 次轮回终止。
 
 ---
 
