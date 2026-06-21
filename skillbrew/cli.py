@@ -339,9 +339,17 @@ def cmd_verify(args: argparse.Namespace) -> int:
     print(f"[溯源] {src}")
 
     def on_progress(s: dict, i: int, n: int) -> None:
+        form = s.get("form", "Skill")
         cat = s.get("category", "")
         head = f"{cat}/" if cat else ""
-        print(f"   [{i + 1}/{n}] 取 {head}{s['name']} SKILL.md ...", flush=True)
+        if form == "MCP":
+            mcp = s.get("mcp") or {}
+            print(f"   [{i + 1}/{n}] 解析 MCP {s['name']}"
+                  f"（{mcp.get('transport', 'stdio')}）...", flush=True)
+        elif form == "repo":
+            print(f"   [{i + 1}/{n}] 探仓库 {s.get('repo', '') or s['name']} ...", flush=True)
+        else:
+            print(f"   [{i + 1}/{n}] 取 {head}{s['name']} SKILL.md ...", flush=True)
 
     try:
         summary = verify_mod.verify(src, repo_override=args.repo, on_progress=on_progress)
@@ -350,9 +358,17 @@ def cmd_verify(args: argparse.Namespace) -> int:
         return 2
 
     print("\n" + "=" * 60)
-    print(f"✅ 一手核实：{summary['verified_repo']}（⭐{summary['stars']}，{summary['stars_observed_at']}）")
-    print(f"   定位方式：{summary['how_resolved']}")
-    print(f"   全仓 skill：{summary['skill_total']} 个 → {summary['install_list']}")
+    form = summary.get("form", "Skill")
+    if form == "MCP":
+        print(f"✅ MCP 形态核实：解析命中 {summary['item_total']} 个 / unresolved {summary.get('unresolved_count', 0)} 个")
+        print(f"   安装清单：{summary['install_list']}")
+    elif form == "repo":
+        print(f"✅ repo 形态核实：待 clone 仓库 {summary['item_total']} 个 / unresolved {summary.get('unresolved_count', 0)} 个")
+        print(f"   安装清单：{summary['install_list']}")
+    else:
+        print(f"✅ 一手核实：{summary['verified_repo']}（⭐{summary['stars']}，{summary['stars_observed_at']}）")
+        print(f"   定位方式：{summary['how_resolved']}")
+        print(f"   全仓 skill：{summary['skill_total']} 个 → {summary['install_list']}")
     print(f"   plan.json 纠正 {len(summary['corrections'])} 处：")
     for c in summary["corrections"]:
         print(f"     - {c}")
@@ -530,6 +546,9 @@ def cmd_install(args: argparse.Namespace) -> int:
             mcp = s.get("mcp") or {}
             print(f"   [{i + 1}/{n}] 注册 MCP 服务器 {head}/{s['name']}"
                   f"（{mcp.get('transport', 'stdio')} -s {mcp.get('scope', 'user')}）...", flush=True)
+        elif form == "repo":
+            print(f"   [{i + 1}/{n}] clone {head}/{s['name']}"
+                  f"（{s.get('repo', '')}，分支 {s.get('branch', 'main')}）...", flush=True)
         else:
             print(f"   [{i + 1}/{n}] 装 {head}/{s['name']}（整目录拷）...", flush=True)
 
@@ -543,10 +562,17 @@ def cmd_install(args: argparse.Namespace) -> int:
         return 2
 
     print("\n" + "=" * 60)
-    print(f"源视频：{r['source_video']}  仓库：{r['verified_repo'] or '(未知)'}")
-    print(f"目标目录：{r['target_dir']}  安装前 distinct：{r['before']}")
     # per-item 形态明细（反黑箱 D22）：MCP 列 command/args/scope/usability，Skill 列目标+文件数
     detail = r.get("items_detail") or []
+    first_form = detail[0].get("form", "Skill") if detail else "Skill"
+    if first_form == "repo":
+        repo_id = detail[0].get("repo", "") or "(未知)"
+        print(f"源视频：{r['source_video']}  repo：{repo_id}")
+    elif first_form == "MCP":
+        print(f"源视频：{r['source_video']}  形态：MCP（{len(detail)} 个能力）")
+    else:
+        print(f"源视频：{r['source_video']}  仓库：{r['verified_repo'] or '(未知)'}")
+    print(f"目标目录：{r['target_dir']}  安装前 distinct：{r['before']}")
     print(f"将装 new：{len(detail)} 个")
     for it in detail:
         form = it.get("form", "Skill")
@@ -557,6 +583,9 @@ def cmd_install(args: argparse.Namespace) -> int:
             argstr = " ".join(it.get("args", []))
             print(f"  - {it['name']}（MCP，{it.get('transport', 'stdio')} -s {it.get('scope', 'user')}，"
                   f"{cmd} {argstr}）{flag}")
+        elif form == "repo":
+            print(f"  - {it['name']}（repo，clone → {it.get('repo', '')}，"
+                  f"分支 {it.get('branch', 'main')}）{flag}")
         else:
             print(f"  - {it['name']}（Skill → {it.get('target', '')}）{flag}")
     if r["skipped_merge"]:
@@ -580,6 +609,13 @@ def cmd_install(args: argparse.Namespace) -> int:
                 flag = f" [{usab}]" if usab and usab != "ready" else ""
                 print(f"  - {s['name']}（MCP，{s.get('registered_via')}，scope={s.get('scope')}，"
                       f"{s.get('transport', 'stdio')}）→ {s.get('path', '')}{flag}")
+            elif form == "repo":
+                usab = s.get("usability", "ready")
+                flag = f" [{usab}]" if usab and usab != "ready" else ""
+                cloned = "新克隆" if s.get("cloned_now") else "已存在(幂等跳过)"
+                deps = "依赖✅" if s.get("deps_installed") else f"依赖待补({s.get('deps_method', 'none')})"
+                print(f"  - {s['name']}（repo，{s.get('repo', '')}@{s.get('branch', 'main')}，"
+                      f"{cloned}，{deps}）→ {s.get('path', '')}{flag}")
             else:
                 print(f"  - {s['name']}（{s.get('file_count', 0)} 文件）→ {s.get('path', '')}")
         if r.get("skipped_credentials"):
@@ -633,7 +669,20 @@ def cmd_record(args: argparse.Namespace) -> int:
 
     ig = r["integrity"]
     print("\n" + "=" * 60)
-    print(f"✅ 代码生成完成：仓库 {r['verified_repo']}")
+    # 形态分支：repo 的 verified_repo 为空（identity 取自 items[0]），按形态显示
+    il = json.loads((src / "install_list.json").read_text(encoding="utf-8"))
+    form = il.get("form", "Skill")
+    if form == "repo":
+        its = il.get("items") or il.get("skills") or []
+        ri = its[0] if its else {}
+        stars = ri.get("stars")
+        star_tag = f"（⭐{stars}）" if stars is not None else ""
+        print(f"✅ 代码生成完成：repo 形态 {ri.get('repo', '')} {star_tag}")
+    elif form == "MCP":
+        its = il.get("items") or il.get("skills") or []
+        print(f"✅ 代码生成完成：MCP 形态，命中 {len(its)} 个能力")
+    else:
+        print(f"✅ 代码生成完成：仓库 {r['verified_repo']}")
     print(f"   本源安装会话：{r['sessions']} 次；本次新装 {len(r['this_run_installed'])} 个")
     print(f"   落盘核对：磁盘 {ig['disk_active_distinct']} == 台账 {ig['registry_active']}"
           f" → {'✅一致' if ig['ok'] else '⚠️不一致'}")

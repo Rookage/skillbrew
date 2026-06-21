@@ -5,6 +5,11 @@
   - form=="MCP"   → 注册进 ~/.claude.json mcpServers（默认 user scope），CLI-first：
                     优先 `claude mcp add -s user ...`（官方原子操作），无 binary 时
                     fallback 原子 JSON 合并（.bak + mtime 守卫 + 写后 json.loads 校验 + 回滚）
+  - form=="repo"  → git clone 到 ~/.claude/clones/<name>/ + 装依赖（阿里云镜像防 hang）+
+                    登记台账；克隆即用，不改 ~/.claude/skills/。与 MCP 不同：repo 的
+                    needs_credentials（如大模型 API key）**不跳过克隆+装依赖**——
+                    克隆+装依赖即"安装"，key 只在"运行"时才用；usability 透明记进
+                    台账/报告（dry-run 标「跑时需凭证」），不替用户造 key
 
 刹车（章程 D18/刹车设计）：install 默认 dry-run——只列要装什么、不下载、不注册、不写台账；
 带 --approve 才真落盘 + 写台账，保"你落盘就是什么"。
@@ -32,12 +37,15 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
+from . import config
 from . import registry
 from .verify import parse_frontmatter  # 复用 SKILL.md frontmatter 轻量解析
 
@@ -352,6 +360,131 @@ def _install_mcp(conn, item: dict, decision: dict,
             "dirs_filled": substituted_dirs, "path": via["install_path"]}
 
 
+# ==================== 形态分发：repo 克隆即用 ====================
+
+# 阿里云 PyPI（Python 包索引）镜像：云电脑直连 pypi 慢、易 hang 死，统一走镜像
+_PIP_MIRROR_ARGS = [
+    "-i", "https://mirrors.aliyun.com/pypi/simple/",
+    "--trusted-host", "mirrors.aliyun.com",
+]
+
+
+def _detect_deps_method(clone_dir: Path) -> str:
+    """探测克隆目录里的依赖清单类型，决定装依赖走哪条路。
+
+    pip 系（requirements.txt / pyproject.toml）走 ``python -m pip``；npm 系（package.json）
+    走 ``npm install``；都没有返回 none（克隆已成功，依赖可后补）。
+    """
+    if (clone_dir / "requirements.txt").exists():
+        return "pip-requirements"
+    if (clone_dir / "pyproject.toml").exists():
+        return "pip-pyproject"
+    if (clone_dir / "package.json").exists():
+        return "npm"
+    return "none"
+
+
+def _install_repo_deps(clone_dir: Path, method: str) -> dict:
+    """按探测到的依赖清单装依赖（阿里云镜像防 hang）。返回 {installed, detail}。
+
+    装依赖失败**不抛**——克隆已成功，依赖可后补；detail 透传 stderr 头供诊断。
+    """
+    if method == "none":
+        return {"installed": False, "detail": "未发现依赖清单，跳过装依赖"}
+    if method == "npm":
+        npm = shutil.which("npm")
+        if not npm:
+            return {"installed": False, "detail": "发现 package.json 但本机无 npm，跳过（可后补）"}
+        proc = subprocess.run([npm, "install"], cwd=clone_dir,
+                              capture_output=True, text=True, timeout=_TIMEOUT * 10)
+        ok = proc.returncode == 0
+        return {"installed": ok,
+                "detail": f"npm install {'成功' if ok else '失败'}: {(proc.stderr or proc.stdout).strip()[:200]}"}
+    # pip 系：requirements.txt 直接 -r；pyproject.toml 装当前包
+    pip_cmd = [sys.executable, "-m", "pip", "install"]
+    if method == "pip-requirements":
+        pip_cmd += ["-r", "requirements.txt"] + _PIP_MIRROR_ARGS
+    else:  # pip-pyproject
+        pip_cmd += ["."] + _PIP_MIRROR_ARGS
+    proc = subprocess.run(pip_cmd, cwd=clone_dir,
+                          capture_output=True, text=True, timeout=_TIMEOUT * 10)
+    ok = proc.returncode == 0
+    return {"installed": ok,
+            "detail": f"pip install {'成功' if ok else '失败'}: {(proc.stderr or proc.stdout).strip()[:200]}"}
+
+
+def _install_repo(conn, item: dict, decision: dict,
+                  source_video: str, full_name: str,
+                  on_progress=None, i: int = 0, total: int = 1) -> dict:
+    """repo 形态：git clone 到 config.repo_clones_dir()/<name>/ + 装依赖 + 登记台账。
+
+    克隆即用（不改 ~/.claude/skills/）：克隆 + 装依赖即「安装」；运行所需的大模型 API key
+    属 needs_credentials，但**不跳过克隆**（key 只在跑的时候才用，装的时候不需要），
+    usability 透明记进台账/报告。已克隆过的目录幂等跳过 git clone（不覆盖本地改动）。
+    返回 installed 条目 {name, form, repo, install_method, usability, path, branch,
+    deps_method, deps_installed, cloned_now}。
+    """
+    name = decision["name"]
+    if on_progress:
+        on_progress(item, i, total)
+    repo_full = item.get("repo") or full_name  # 如 harry0703/MoneyPrinterTurbo
+    url = item.get("url") or f"https://github.com/{repo_full}"
+    branch = item.get("default_branch") or "main"
+    clones_root = config.repo_clones_dir()
+    clones_root.mkdir(parents=True, exist_ok=True)
+    clone_dir = clones_root / name
+
+    cloned_now = False
+    if clone_dir.exists() and (clone_dir / ".git").exists():
+        clone_detail = "已存在，跳过 git clone（幂等）"  # 不覆盖用户可能的本地改动
+    else:
+        git_bin = shutil.which("git")
+        if not git_bin:
+            raise RuntimeError(f"本机无 git，无法克隆 {repo_full}（先装 git 再重跑）")
+        # --depth 1 浅克隆更快；先按记录的默认分支克隆，失败则退回 git 默认分支（防分支名漂移）
+        proc = subprocess.run(
+            [git_bin, "clone", "--depth", "1", "--branch", branch, url, str(clone_dir)],
+            capture_output=True, text=True, timeout=_TIMEOUT * 10,
+        )
+        if proc.returncode != 0:
+            if clone_dir.exists():
+                shutil.rmtree(clone_dir, ignore_errors=True)
+            proc = subprocess.run(
+                [git_bin, "clone", "--depth", "1", url, str(clone_dir)],
+                capture_output=True, text=True, timeout=_TIMEOUT * 10,
+            )
+            if proc.returncode != 0:
+                raise RuntimeError(f"git clone 失败 {repo_full}: {(proc.stderr or proc.stdout).strip()}")
+            clone_detail = f"git clone --depth 1 成功（记录分支 {branch} 不匹配，退回默认分支）"
+        else:
+            clone_detail = f"git clone --depth 1 --branch {branch} 成功"
+        cloned_now = True
+
+    deps_method = _detect_deps_method(clone_dir)
+    deps = _install_repo_deps(clone_dir, deps_method)  # 阿里云镜像防 hang
+
+    usability = item.get("usability", "ready")
+    dedup_note = f"dedup 判定 new，{clone_detail}；{deps['detail']}"
+    registry.upsert_skill(
+        conn, name,
+        display_name=name,
+        category="",
+        form="repo",
+        source=repo_full,
+        source_video=source_video,
+        install_path=str(clone_dir),
+        file_count=0,
+        status="active",
+        attribution=f"{repo_full}（GitHub 开源，克隆即用）",
+        dedup_note=dedup_note,
+        installed_at=_now_iso(),
+    )
+    return {"name": name, "form": "repo", "repo": repo_full, "install_method": "clone",
+            "usability": usability, "path": str(clone_dir), "branch": branch,
+            "deps_method": deps_method, "deps_installed": deps["installed"],
+            "cloned_now": cloned_now}
+
+
 # ==================== 主流程 ====================
 
 def install(
@@ -420,6 +553,14 @@ def install(
             entry["args"] = list(mcp.get("args") or [])  # 原样占位（<DIRS> 等），透明展示待改
             entry["credential_env"] = list(item.get("credential_env") or [])
             entry["needs_credentials"] = (usability == "needs_credentials")
+        elif form == "repo":
+            entry["repo"] = item.get("repo", "")
+            entry["url"] = item.get("url", "")
+            entry["install_method"] = item.get("install_method", "clone")
+            entry["branch"] = item.get("default_branch", "main")
+            entry["credential_env"] = list(item.get("credential_env") or [])
+            entry["needs_credentials"] = (usability == "needs_credentials")
+            entry["clone_target"] = str(config.repo_clones_dir() / name)
         else:
             entry["target"] = str(target / name)
             entry["file_count"] = len(item.get("files", []))
@@ -478,6 +619,10 @@ def install(
                 installed.append(_install_mcp(conn, item, d, source_video, full_name,
                                               resolved_args, sub_dirs,
                                               on_progress=on_progress, i=i, total=total))
+            elif form == "repo":
+                # repo：克隆+装依赖即安装，needs_credentials 不跳过（key 只在跑时才用）
+                installed.append(_install_repo(conn, item, d, source_video, full_name,
+                                               on_progress=on_progress, i=i, total=total))
             else:
                 installed.append(
                     _install_skill(conn, item, d, target, source_video, full_name,
@@ -527,16 +672,31 @@ def format_plan_text(r: dict) -> str:
 
     cli.cmd_install 与本模块 _main 共用，保两入口输出一致。
     """
+    # 落点按本次实际形态列（反黑箱 D22）：Skill→skills 目录、MCP→注册 ~/.claude.json、
+    # repo→克隆目录。混合形态则都列出，避免 repo 项误显示成 skills 目录。
+    forms = {it.get("form", "Skill") for it in (r.get("items_detail") or [])}
+    targets = []
+    if "Skill" in forms or not forms:
+        targets.append(str(r.get("target_dir", "")))
+    if "MCP" in forms:
+        targets.append("注册 ~/.claude.json")
+    if "repo" in forms:
+        targets.append(f"克隆 {config.repo_clones_dir()}")
+    target_line = " + ".join(targets) or str(r.get("target_dir", ""))
     lines = [
         f"源视频：{r['source_video']}  仓库：{r['verified_repo'] or '(未知)'}",
-        f"目标/注册：{r['target_dir']}  安装前 distinct：{r['before']}",
+        f"目标/注册：{target_line}  安装前 distinct：{r['before']}",
         f"将装 new：{len(r['to_install'])} 个",
     ]
     for it in r.get("items_detail") or []:
         form = it.get("form", "Skill")
         tag = ""
         if it.get("needs_credentials"):
-            tag = "  ⚠️ 需凭证（默认跳过真装，待配 credential_env）"
+            if form == "repo":
+                envs = ",".join(it.get("credential_env", [])) or "credential_env"
+                tag = f"  〔跑时需凭证 {envs}（克隆+装依赖照常进行）〕"
+            else:  # MCP 需凭证（如 github PAT）→ 装了也不能起，默认跳过真装
+                tag = "  ⚠️ 需凭证（默认跳过真装，待配 credential_env）"
         elif it.get("usability") and it["usability"] != "ready":
             tag = f"  〔装完前必做：{it['usability']}〕"
         if form == "MCP":
@@ -544,6 +704,11 @@ def format_plan_text(r: dict) -> str:
             head = (f"  - [{form}] {it['name']}  scope={it.get('scope','user')}  "
                     f"{it.get('command','')} {args}".rstrip())
             lines.append(head + tag)
+        elif form == "repo":
+            lines.append(
+                f"  - [{form}] {it['name']}  {it.get('repo','')}  → {it.get('clone_target','')}"
+                f"（git clone --branch {it.get('branch','main')}）{tag}".rstrip()
+            )
         else:
             lines.append(
                 f"  - [{form}] {it['name']}  → {it.get('target','')}"
@@ -593,6 +758,11 @@ def _main() -> int:
                 dirs = "  〔<DIRS> 已填默认目录，建议收窄〕" if s.get("dirs_filled") else ""
                 print(f"  - {s['name']}（{s.get('registered_via','')}，scope={s.get('scope','')}，"
                       f"usability={s.get('usability','')}）→ {s.get('path','')}{dirs}")
+            elif s.get("form") == "repo":
+                cloned = "新克隆" if s.get("cloned_now") else "已存在(幂等跳过)"
+                deps = "依赖✅" if s.get("deps_installed") else f"依赖待补({s.get('deps_method','none')})"
+                print(f"  - {s['name']}（{s.get('repo','')}@{s.get('branch','main')}，{cloned}，{deps}，"
+                      f"usability={s.get('usability','')}）→ {s.get('path','')}")
             else:
                 print(f"  - {s['name']}（{s.get('file_count',0)} 文件）→ {s.get('path','')}")
         print(f"   {r.get('note', '')}")

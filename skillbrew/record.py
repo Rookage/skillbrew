@@ -99,22 +99,35 @@ def _gather(source_dir: Path, skill_dirs: list[Path], db_path) -> dict:
     reg_active_by_name = {r["name"]: r for r in active}
 
     # 落盘核对（形态感知，registry 作单一真相源）：Skill 扫磁盘目录 vs 台账 active(Skill)；
-    # MCP 读 ~/.claude.json 注册表 vs 台账 active(MCP)。两形态各自对齐，MCP 项才进得了核对（D2/D22）。
+    # MCP 读 ~/.claude.json 注册表 vs 台账 active(MCP)；repo 扫 ~/.claude/clones/ vs 台账 active(repo)。
+    # 三形态各自对齐，MCP/repo 项才进得了核对（D2/D22）。
     disk_entries = dedup_mod.scan_local_skills(skill_dirs)
     disk_skill_by_key = {dedup_mod._key(e["name"]): e for e in disk_entries}
     disk_mcps = dedup_mod.scan_local_mcps()
     disk_mcp_names = {m["name"] for m in disk_mcps}
+    disk_repos = dedup_mod.scan_local_repos()  # [{name, repo, path, source}]
+    disk_repo_fulls = {r["repo"].lower() for r in disk_repos if r.get("repo")}
     reg_active_skill = [r for r in active if (r.get("form") or "Skill") == "Skill"]
     reg_active_mcp = [r for r in active if (r.get("form") or "Skill") == "MCP"]
+    reg_active_repo = [r for r in active if (r.get("form") or "Skill") == "repo"]
     reg_skill_by_key = {dedup_mod._key(r["name"]): r for r in reg_active_skill}
     reg_mcp_names = {r["name"] for r in reg_active_mcp}
+    # repo 形态对齐键：台账行 source=仓全名（owner/repo），磁盘行 repo=同；归一化小写比对
+    reg_repo_fulls = {(r.get("source") or r["name"]).lower() for r in reg_active_repo}
     orphan_skills = sorted(disk_skill_by_key[k]["name"] for k in disk_skill_by_key.keys() - reg_skill_by_key.keys())
     missing_skills = sorted(reg_skill_by_key[k]["name"] for k in reg_skill_by_key.keys() - disk_skill_by_key.keys())
     orphan_mcps = sorted(disk_mcp_names - reg_mcp_names)
     missing_mcps = sorted(reg_mcp_names - disk_mcp_names)
-    orphans = orphan_skills + orphan_mcps
-    missing = missing_skills + missing_mcps
-    disk_distinct = len(disk_skill_by_key) + len(disk_mcp_names)
+    orphan_repos = sorted(disk_repo_fulls - reg_repo_fulls)
+    missing_repos = sorted(reg_repo_fulls - disk_repo_fulls)
+    orphans = orphan_skills + orphan_mcps + orphan_repos
+    missing = missing_skills + missing_mcps + missing_repos
+    disk_distinct = len(disk_skill_by_key) + len(disk_mcp_names) + len(disk_repo_fulls)
+
+    # repo 形态的身份来自首个 item（install_list 无 verified_repo 键，full_name 为空；
+    # 故 §1/§7/看板取 repo_item 而非 g["full_name"]，避免误走 MCP 分支或假报 MIT 许可证）
+    src_form = il.get("form") or "Skill"
+    repo_item = items[0] if (src_form == "repo" and items) else {}
 
     # dedup 决策细拆（new 再拆 deprecated / 非deprecated）
     decs = dd.get("decisions", [])
@@ -135,12 +148,16 @@ def _gather(source_dir: Path, skill_dirs: list[Path], db_path) -> dict:
         "all_skills": all_skills, "active": active, "merged": merged,
         "reg_active_by_name": reg_active_by_name,
         "reg_active_skill": reg_active_skill, "reg_active_mcp": reg_active_mcp,
+        "reg_active_repo": reg_active_repo,
         "sessions": sessions, "src_sessions": src_sessions,
         "disk_entries": disk_entries, "disk_distinct": disk_distinct,
         "disk_skill_distinct": len(disk_skill_by_key), "disk_mcp_count": len(disk_mcp_names),
+        "disk_repo_count": len(disk_repo_fulls),
         "orphan_skills": orphan_skills, "missing_skills": missing_skills,
         "orphan_mcps": orphan_mcps, "missing_mcps": missing_mcps,
+        "orphan_repos": orphan_repos, "missing_repos": missing_repos,
         "orphans": orphans, "missing": missing,
+        "src_form": src_form, "repo_item": repo_item,
         "new_installed": new_installed, "new_deprecated": new_deprecated,
         "merge_cands": merge_cands, "skips": skips,
         "summary": dd.get("summary", {}), "skill_dirs": skill_dirs,
@@ -234,6 +251,8 @@ def _invoke_hint(name: str, form: str | None) -> str:
     f = (form or "Skill").strip()
     if f == "MCP":
         return "配进 Claude Code 后自动暴露工具，模型按需调"
+    if f == "repo":
+        return "cd 进克隆目录，按其 README 装依赖+配置+运行"
     if f in ("代码", "code", "Code"):
         return "按其说明引入/运行的代码片段"
     if f in ("配置", "config", "Config"):
@@ -268,6 +287,14 @@ def _rollback_mcp_lines(names: list[str]) -> list[str]:
     lines = ["# MCP 形态：从 ~/.claude.json (user scope) 注销"]
     for n in names:
         lines.append(f"claude mcp remove {n} -s user     # 或手动删 ~/.claude.json 里 mcpServers['{n}']")
+    return lines
+
+
+def _rollback_repo_lines(names: list[str]) -> list[str]:
+    """repo（克隆即用）形态回滚：删克隆目录 ~/.claude/clones/<name>；台账同步移除。"""
+    lines = ["# repo 形态：删克隆目录（install_path 默认 ~/.claude/clones/<name>）"]
+    for n in names:
+        lines.append(f"rm -rf ~/.claude/clones/{n}     # 克隆目录连同依赖一起删；台账另 registry.remove_skill 删登记")
     return lines
 
 
@@ -314,7 +341,9 @@ def _d22_invoke_section(g: dict, *, heading: str) -> list[str]:
     out.append("> **调用方式速记**：Skill 形态的能力，Claude Code 在任务相关时按每个技能 frontmatter "
                "的 `description` 自动加载（无需手输 `@`）；想强制用某个，直接说『使用 `<名>` 技能』。"
                "「触发提示词」列即每个技能 description 里的 `Use when…` 条件——满足时自动唤起。"
-               "MCP 形态配进 `~/.claude.json` 后自动暴露工具，模型按需调；「装完前必做」列点明凭证/配置/首跑。")
+               "MCP 形态配进 `~/.claude.json` 后自动暴露工具，模型按需调；「装完前必做」列点明凭证/配置/首跑。"
+               "repo（克隆即用）形态 clone 到 `~/.claude/clones/` 后，`cd` 进去按其 README 装依赖+配置+运行；"
+               "本工具只负责克隆+装依赖，真跑还得配齐凭证/运行时，见「装完前必做」列。")
     if rec:
         out.append(f"> 注：install 实装 `approved` 子集（D20 挑着买，{len(rec.get('approved', []))} 个）；"
                    f"上表按 §1 口径列全量 new 候选，供逐个查调用方式与前置。")
@@ -342,6 +371,18 @@ def _gen_record(g: dict) -> str:
     if full:
         L.append(f"> **源素材**：{src_label} `{g['source_dir'].name}` · **一手仓库**：`{full}`"
                  f"（{g['star_tag']}，MIT 许可证）")
+    elif g["src_form"] == "repo":
+        # repo（克隆即用）：install_list 无 verified_repo 键，身份取首个 item
+        # （full_name 为空，勿误报「MIT 许可证」；星数从 item 取，非 g["star_tag"]）
+        ri = g["repo_item"]
+        if ri and g["total"] == 1:
+            creds = ri.get("credential_env") or []
+            cred_txt = ("，需配 " + "、".join(f"`{c}`" for c in creds)) if creds else "，装完即用"
+            L.append(f"> **源素材**：{src_label} `{g['source_dir'].name}` · **形态**：repo（克隆即用）"
+                     f" · **一手仓库**：`{ri.get('repo','')}`（{_star_tag(ri)}{cred_txt}）")
+        else:
+            L.append(f"> **源素材**：{src_label} `{g['source_dir'].name}` · **形态**：repo（克隆即用）"
+                     f"（{g['total']} 个独立仓库，每项自带上游仓与星数）")
     else:
         # MCP 多源：无单一仓库，install_list 各 item 自带 repo/stars（D2 产物形态/源皆不预设）
         L.append(f"> **源素材**：{src_label} `{g['source_dir'].name}` · **形态**：MCP"
@@ -361,7 +402,10 @@ def _gen_record(g: dict) -> str:
     forms = {(d.get("form") or "Skill") for d in inst}
     has_mcp = "MCP" in forms
     has_skill = "Skill" in forms
-    if has_mcp and has_skill:
+    has_repo = "repo" in forms
+    if has_repo:
+        install_verb = "git clone 仓到 `~/.claude/clones/` + 装依赖（阿里云镜像）+ 配置后运行"
+    elif has_mcp and has_skill:
         install_verb = "Skill 整目录拷到 `.claude/skills/` + MCP 注册进 `~/.claude.json`"
     elif has_mcp:
         install_verb = "MCP 注册进 `~/.claude.json`（user scope，`claude mcp add -s user`）"
@@ -382,13 +426,32 @@ def _gen_record(g: dict) -> str:
     # 1. 落地清单（形态感知：Skill 列文件数，MCP 列包/命令 + scope）
     L.append("## 1. 落地清单\n")
     if really_installed:
-        where = (("写入 `~/.claude/skills/`" if has_skill else "")
-                 + (" + " if has_skill and has_mcp else "")
-                 + ("注册 `~/.claude.json`" if has_mcp else ""))
+        parts = []
+        if has_skill:
+            parts.append("写入 `~/.claude/skills/`")
+        if has_mcp:
+            parts.append("注册 `~/.claude.json`")
+        if has_repo:
+            parts.append("克隆 `~/.claude/clones/`")
+        where = " + ".join(parts)
         L.append(f"### 本次新装 {n_inst} 个能力（{where}）\n")
     else:
         L.append(f"### 待装候选 {n_inst} 个能力（dedup 判 new，尚未 `--approve` 落盘）\n")
-    if has_mcp and not has_skill:
+    if has_repo and not has_mcp and not has_skill:
+        L.append("| # | 能力名 | 形态 | 上游仓 | 星数 | 凭证 | 一句话 |")
+        L.append("|---|--------|------|--------|------|------|--------|")
+        for i, d in enumerate(inst, 1):
+            name = d["name"]
+            s = g["by_name"].get(name, {})
+            form = d.get("form") or s.get("form") or "repo"
+            repo_full = s.get("repo") or d.get("repo") or ""
+            stars = s.get("stars") if s.get("stars") is not None else d.get("stars")
+            star_txt = f"⭐{stars}" if stars is not None else "（星数未取）"
+            creds = s.get("credential_env") or d.get("credential_env") or []
+            cred_txt = ("、".join(f"`{c}`" for c in creds)) if creds else "—"
+            desc = _short(s.get("invoke_hint") or s.get("description", ""))
+            L.append(f"| {i} | `{name}` | {form} | `{repo_full}` | {star_txt} | {cred_txt} | {desc} |")
+    elif has_mcp and not has_skill:
         L.append("| # | 能力名 | 形态 | 注册方式 | 包/命令 | 一句话 |")
         L.append("|---|--------|------|----------|---------|--------|")
         for i, d in enumerate(inst, 1):
@@ -519,6 +582,7 @@ def _gen_record(g: dict) -> str:
                  f"（不影响手动 A 装的 {sess0_added} 个和本机原有）：\n")
         skill_names = [d["name"] for d in inst if (d.get("form") or "Skill") == "Skill"]
         mcp_names = [d["name"] for d in inst if (d.get("form") or "Skill") == "MCP"]
+        repo_names = [d["name"] for d in inst if (d.get("form") or "Skill") == "repo"]
         L.append("```bash")
         if skill_names:
             L.append("# Skill 形态：删 ~/.claude/skills 下的目录")
@@ -529,19 +593,38 @@ def _gen_record(g: dict) -> str:
             if skill_names:
                 L.append("")
             L.extend(_rollback_mcp_lines(mcp_names))
+        if repo_names:
+            if skill_names or mcp_names:
+                L.append("")
+            L.extend(_rollback_repo_lines(repo_names))
         L.append("```\n")
         L.append("台账移除：`registry.remove_skill(conn, name)` 逐个删，或直接删 `data/registry.db` 重建。\n")
     else:
         L.append(f"本次 dry-run（未 `--approve`）**未安装任何能力**——磁盘与台账均未动，无需回滚。\n")
-        L.append(f"若日后 `--approve` 装了再想卸载，本节会列 `rm -rf`（Skill）/ `claude mcp remove`（MCP）清单 + 台账移除法。\n")
+        L.append(f"若日后 `--approve` 装了再想卸载，本节会列 `rm -rf`（Skill）/ `claude mcp remove`（MCP）"
+                 f"/ `rm -rf ~/.claude/clones/`（repo）清单 + 台账移除法。\n")
 
-    # 7. 开源合规（形态感知：Skill 单仓 MIT / MCP 各包各自许可）
+    # 7. 开源合规（形态感知：Skill 单仓 MIT / MCP 各包许可 / repo 各仓各自许可）
     L.append("## 7. 开源合规\n")
     if full:
         L.append(f"- **仓库**：{g['html_url']}（MIT License）—— 允许再分发，须保留版权与许可声明。")
         L.append(f"- **本机落地**：每个新增能力保留原作者原文；台账 `attribution` 字段登记 "
                  f"「{full}（GitHub 开源）」。")
         L.append(f"- **定位方式**：{g['how_resolved']}\n")
+    elif g["src_form"] == "repo":
+        # repo（克隆即用）：install_list 无 verified_repo 键，full_name 为空；
+        # 合规按各 item 上游仓取数（D2 不预设形态/源，勿误走 MCP 分支）
+        ri = g["repo_item"]
+        if ri and g["total"] == 1:
+            L.append(f"- **仓库**：`{ri.get('repo','')}`（{_star_tag(ri)}）—— 按其各自上游许可"
+                     "（多为 MIT / Apache-2.0）；clone 下来本地跑须保留版权与许可声明。")
+            L.append("- **本机落地**：git clone 整仓保留原作者原文；install 仅 clone + 装依赖 + 配置，"
+                     "不改上游、不分发。")
+            L.append("- **归属**：item 的 `repo`/`url` 字段登记上游仓，台账 `attribution` 留痕；"
+                     "定位方式=verify probe_repo 直接核 GitHub API。\n")
+        else:
+            L.append("- **repo 形态**：各仓按各自上游许可；install 仅 clone + 装依赖 + 配置，不改上游。")
+            L.append("- **归属**：每个 item 的 `repo` 字段登记上游仓，台账 `attribution` 留痕。\n")
     else:
         L.append("- **MCP 形态**：各包按各自上游许可（多为 MIT / Apache-2.0）；install 仅注册到 "
                  "`~/.claude.json`，不拷源码、不改上游。")
@@ -568,6 +651,7 @@ def _gen_dashboard(g: dict) -> str:
     inst = g["new_installed"]
     src_form = g["il"].get("form") or "Skill"
     has_mcp = src_form == "MCP"  # §1 溯源纠错据此剥 Skill 路径残留 boilerplate（D2 不退化成 Skill 加载器）
+    has_repo = src_form == "repo"  # repo（克隆即用）：身份取 g["repo_item"]，勿误走 MCP 分支（full_name 为空）
     # G3 finding-2 / G2 判断步：与 _gen_record 同口径（基准零回归、dry-run 降级、recommend 优雅接入）
     really_installed = bool(src_sessions)
     rec = g.get("recommend")
@@ -576,6 +660,14 @@ def _gen_dashboard(g: dict) -> str:
     src_label = _source_label(g['source_dir'].name)
     if full:
         L.append(f"> **源素材**：{src_label} `{g['source_dir'].name}` · **一手仓库**：`{full}`（{g['star_tag']}）")
+    elif has_repo:
+        ri = g["repo_item"]
+        if ri and g["total"] == 1:
+            L.append(f"> **源素材**：{src_label} `{g['source_dir'].name}` · **形态**：repo（克隆即用）"
+                     f" · **一手仓库**：`{ri.get('repo','')}`（{_star_tag(ri)}）")
+        else:
+            L.append(f"> **源素材**：{src_label} `{g['source_dir'].name}` · **形态**：repo（克隆即用）"
+                     f"（{g['total']} 个独立仓库）")
     else:
         L.append(f"> **源素材**：{src_label} `{g['source_dir'].name}` · **形态**：MCP（{g['total']} 个独立能力）")
     L.append(f"> **本源安装会话**：{len(src_sessions)} 次 · **当前台账**："
@@ -587,6 +679,10 @@ def _gen_dashboard(g: dict) -> str:
     if full:
         L.append(f"一条{src_label}视频 → 顺藤摸瓜定位 `{full}`（{g['total']} 个能力）"
                  f"→ 去重判定 → 授权安装累加：{_session_arrows(src_sessions)}，"
+                 f"越装越强没塞重复；磁盘 active distinct {g['disk_distinct']} == 台账 {len(active)}。\n")
+    elif has_repo:
+        L.append(f"一条{src_label}视频 → 消化出 {g['total']} 个 repo（克隆即用）项目候选 → 去重判定"
+                 f" → 授权 clone+装依赖+配置：{_session_arrows(src_sessions)}，"
                  f"越装越强没塞重复；磁盘 active distinct {g['disk_distinct']} == 台账 {len(active)}。\n")
     else:
         L.append(f"一条{src_label}视频 → 消化出 {g['total']} 个 MCP 能力候选 → 去重判定"
@@ -601,7 +697,13 @@ def _gen_dashboard(g: dict) -> str:
     ocr_fix_short = ocr_fix_text.removeprefix("summary: ").replace('"', "'").replace("\n", " ")
     L.append("```mermaid")
     L.append("flowchart LR")
-    vf_label = (f"真身 {full}") if full else "MCP catalog 定位"
+    if full:
+        vf_label = f"真身 {full}"
+    elif has_repo:
+        ri = g["repo_item"]
+        vf_label = f"真身 {ri.get('repo', '')}" if ri else "repo 探测定位"
+    else:
+        vf_label = "MCP catalog 定位"
     L.append(f'    V["素材<br/>{src_label} {src_name}"] --> P["消化草稿<br/>plan.json（OCR）"]')
     L.append(f'    P -->|"{ocr_fix_short}"| VF["溯源核实<br/>{vf_label}"]')
     L.append(f'    VF --> IL["一手安装清单<br/>{g["total"]} 个能力"]')
@@ -621,10 +723,10 @@ def _gen_dashboard(g: dict) -> str:
     L.append("```\n")
     if g["ocr_note"]:
         note = g["ocr_note"]
-        if has_mcp:
-            # MCP 形态：traced note 尾部「全仓 N 个 skill 详见 install_list.json」是 verify 的 Skill 路径残留
-            # boilerplate（单仓 resolve_repo 只数 SKILL.md），对 MCP 无意义——§1 表/§2 已列 N 个 MCP 能力。
-            # 剥掉避免「退化成 Skill 加载器」措辞（D2 产物形态由计划内容决定，不预设）。
+        if has_mcp or has_repo:
+            # 非 Skill 形态（MCP / repo）：traced note 尾部「全仓 N 个 skill 详见 install_list.json」是
+            # verify 的 Skill 路径残留 boilerplate（单仓 resolve_repo 只数 SKILL.md），对 MCP/repo 无意义——
+            # §1 表/§2 已列 N 个能力。剥掉避免「退化成 Skill 加载器」措辞（D2 产物形态由计划内容决定，不预设）。
             idx = note.find("全仓")
             if idx >= 0 and "skill 详见 install_list.json" in note[idx:]:
                 note = note[:idx].rstrip().rstrip("。").rstrip()
@@ -632,6 +734,11 @@ def _gen_dashboard(g: dict) -> str:
     else:
         if full:
             L.append(f"**溯源纠错**：verify 回 GitHub 一手核实为 `{full}`（{g['star_tag']}）。\n")
+        elif has_repo:
+            ri = g["repo_item"]
+            repo_txt = ri.get("repo", "") if ri else ""
+            star_txt = _star_tag(ri) if ri else "（星数未取）"
+            L.append(f"**溯源纠错**：verify probe_repo 直核 GitHub API 定位 `{repo_txt}`（{star_txt}）。\n")
         else:
             L.append("**溯源纠错**：MCP 形态，各 item 按 catalog（brew-formula 表）定位上游包，未命中者进 unresolved 透明降级。\n")
 

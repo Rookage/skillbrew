@@ -137,3 +137,16 @@ def claude_bin() -> str | None:
     if found:
         return found
     return None
+
+
+# ---- repo（克隆即用）形态安装相关配置 ----
+
+# 克隆即用仓库的落地根目录（镜像 ~/.claude/skills/ 的用户级约定：clone 下来的
+# 开源项目统一放这里，便于去重扫描与卸载回滚）。可用环境变量 SKILLBREW_CLONES_DIR
+# 覆盖（部署方显式指定，如指向更大的工作盘；该 env 只存在本机、不进仓库）。
+def repo_clones_dir() -> Path:
+    """返回克隆即用仓库的落地根目录。默认 ~/.claude/clones/，可被 SKILLBREW_CLONES_DIR 覆盖。"""
+    env_hint = os.environ.get("SKILLBREW_CLONES_DIR")
+    if env_hint:
+        return Path(env_hint)
+    return Path.home() / ".claude" / "clones"

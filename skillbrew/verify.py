@@ -785,9 +785,10 @@ def verify(source_dir: Path, *, repo_override: str | None = None, on_progress=No
     """对一个源目录跑溯源：读 plan.json → 按 form 分流 → 产 install_list.json + 回填 plan.json。
 
     章程 D2：产物形态由计划内容决定，不预设。入口读 plan.capabilities 的 form 分流：
-      - 全 Skill → _verify_skill（单仓 resolve_repo + group_skill_dirs + 整目录拷，原逻辑不变）
       - 任一 MCP → _verify_mcp（多仓：遍历 capabilities 查 mcp_catalog，不走 resolve_repo）
-    两路都产 install_list.json（含规范键 items[] + 兼容别名 skills[]）并回填 plan._verify。
+      - 任一 config/code/repo → _verify_repo（clone&use：聚合到 github 仓，一仓一 item，clone 装跑）
+      - 全 Skill → _verify_skill（单仓 resolve_repo + group_skill_dirs + 整目录拷，原逻辑不变）
+    三路都产 install_list.json（含规范键 items[] + 兼容别名 skills[]）并回填 plan._verify。
     verify 纯 GitHub curl / 本地查表，不调 LLM、不耗 DeepSeek/Agnes 配额、不要 key。
     """
     source_dir = Path(source_dir)
@@ -798,8 +799,11 @@ def verify(source_dir: Path, *, repo_override: str | None = None, on_progress=No
 
     caps = plan.get("capabilities", []) or []
     has_mcp = any((c.get("form") or "").upper() == "MCP" for c in caps)
+    has_repo = any((c.get("form") or "").strip().lower() in _REPO_FORMS for c in caps)
     if has_mcp:
         return _verify_mcp(source_dir, plan_path, plan)
+    if has_repo:
+        return _verify_repo(source_dir, plan_path, plan)
     return _verify_skill(source_dir, plan_path, plan, repo_override=repo_override, on_progress=on_progress)
 
 
@@ -907,6 +911,216 @@ def _verify_mcp(source_dir: Path, plan_path: Path, plan: dict) -> dict:
     }
 
 
+# ===================== repo（clone&use）形态 =====================
+# 章程 D2：form=config/code/repo 的能力——其真身是一个要 git clone 下来本地跑的开源项目
+# （如 MoneyPrinterTurbo：文案/视频/音频字幕三能力同一仓），不是 SKILL.md 集合、也不是
+# MCP 服务器。clone 一次即得全部能力，故按 github 仓去重聚合：一个仓 = 一个 item
+# （form=repo, install_method=clone）。install 时 git clone + 装依赖 + 配置 + 运行
+# （install._install_repo，章程 D20 install_method 非硬编码）。
+# 与 MCP 的区别：MCP 每条 capability 对应一个独立 MCP 服务器；repo 形态多条 capability
+# 常共用一个仓，按 full_name 聚合，capability 名收进 item.capabilities[]。
+
+# form 取值（小写）表示「clone&use」形态：config（按说明并入配置）/ code（引入运行的代码）/ repo
+_REPO_FORMS = ("config", "code", "repo")
+
+
+def _ts_repo(ts: dict) -> tuple[str, str] | None:
+    """从一条 traced_source 抠 github owner/repo。先匹配 url 字段里的 github.com/…，再退回
+    name 字段的 owner/repo 写法。抠不到返回 None（交 unresolved，不臆造）。"""
+    urls = parse_github_urls(json.dumps(ts, ensure_ascii=False))
+    if urls:
+        return urls[0]
+    nm = (ts.get("name") or "").strip()
+    m = re.match(r"^([A-Za-z0-9](?:[A-Za-z0-9-]*))/([A-Za-z0-9._-]+)$", nm)
+    if m:
+        return m.group(1), re.sub(r"\.git$", "", m.group(2))
+    return None
+
+
+def _repo_usability(steps: list[str]) -> tuple[str, list[str]]:
+    """从 plan 的 install_steps 文本推 repo 项的 usability + 装完前必做（D22 反黑箱）。
+
+    关键词命中式启发（非 LLM 臆造）：install_steps 是 plan 阶段据字幕归纳的「克隆+装依赖+
+    配置+运行」步骤，含真实依赖线索。多命中按 needs_credentials > needs_runtime >
+    needs_config > ready 取最高（要 key 的也常要配置，取最严）。返回 (usability, steps)。
+    """
+    blob = " ".join(steps).lower()
+    post: list[str] = []
+    if any(k in blob for k in (
+        "api key", "api_key", "api-key", "密钥", "token", "openai", "deepseek",
+        "llm api", "大模型api", "大模型 api", "api 密钥",
+    )):
+        post.append("需配置大模型 API key（如 OPENAI_API_KEY / DEEPSEEK_API_KEY），缺则装了不能跑")
+        return "needs_credentials", post
+    if any(k in blob for k in ("ffmpeg", "imagemagick", "cuda", "gpu", "torch")):
+        post.append("需装系统运行时（如 ffmpeg / GPU 驱动）才能跑")
+        return "needs_runtime", post
+    if any(k in blob for k in (".env", "config.toml", "config.yaml", "config.json", "配置文件", "修改配置")):
+        post.append("需按其 README 改配置文件（如 .env / config.toml）后才能跑")
+        return "needs_config", post
+    post.append("按其 README 克隆 + 装依赖 + 运行")
+    return "ready", post
+
+
+def _repo_credential_env(steps: list[str]) -> list[str] | None:
+    """从 install_steps 文本推需填的凭证环境变量名（D22）。关键词命中，不臆造。"""
+    blob = " ".join(steps).lower()
+    envs: list[str] = []
+    if any(k in blob for k in ("openai", "gpt")):
+        envs.append("OPENAI_API_KEY")
+    if "deepseek" in blob:
+        envs.append("DEEPSEEK_API_KEY")
+    if "moonshot" in blob or "kimi" in blob:
+        envs.append("MOONSHOT_API_KEY")
+    if "qwen" in blob or "通义" in blob or "dashscope" in blob:
+        envs.append("DASHSCOPE_API_KEY")
+    return envs or None
+
+
+def group_repo_items(plan: dict) -> tuple[list[dict], list[dict]]:
+    """repo（clone&use）形态：遍历 plan.capabilities，form ∈ {config,code,repo} 的按其
+    traced_source 指向的 github 仓去重聚合成 item（一个仓一个 item）。一手 probe_repo 核实
+    仓库存在 + 星数 + 默认分支，404 进 unresolved。从 plan install_steps 推 usability。
+    返回 (items, unresolved)。纯 GitHub curl + 本地聚合，不调 LLM、不耗配额（章程 D18）。
+    """
+    traced = plan.get("traced_sources", []) or []
+    caps = plan.get("capabilities", []) or []
+    by_repo: dict[tuple[str, str], dict] = {}
+    unresolved: list[dict] = []
+    for cap in caps:
+        f = (cap.get("form") or "").strip().lower()
+        if f not in _REPO_FORMS:
+            continue
+        source_ref = cap.get("source_ref")
+        ts: dict = {}
+        if source_ref is not None:
+            try:
+                idx = int(source_ref) - 1
+            except (TypeError, ValueError):
+                idx = -1
+            if 0 <= idx < len(traced):
+                ts = traced[idx] or {}
+        pair = _ts_repo(ts)
+        if pair is None:
+            unresolved.append({
+                "name": cap.get("name", ""),
+                "reason": "repo 形态但 traced_sources 未含 github 仓库 URL，需人工核实",
+                "source_ref": source_ref,
+            })
+            continue
+        owner, repo = pair
+        key = (owner.lower(), repo.lower())
+        e = by_repo.setdefault(key, {
+            "owner": owner, "repo": repo, "full_name": f"{owner}/{repo}",
+            "capabilities": [], "steps": [],
+        })
+        e["capabilities"].append({
+            "name": cap.get("name", ""), "form": f, "source_ref": source_ref,
+            "install_steps": cap.get("install_steps", []) or [],
+        })
+        e["steps"].extend(cap.get("install_steps", []) or [])
+
+    items: list[dict] = []
+    for e in by_repo.values():
+        info = probe_repo(e["owner"], e["repo"])  # 一手核实存在 + 星数 + 默认分支
+        if info is None:
+            unresolved.append({
+                "name": e["full_name"],
+                "reason": f"github 仓库 {e['full_name']} 404（不存在或私有），无法 clone",
+                "source_ref": None,
+            })
+            continue
+        usability, post = _repo_usability(e["steps"])
+        items.append({
+            "name": info["repo"],
+            "form": "repo",
+            "install_method": "clone",
+            "repo": info["full_name"],
+            "owner": info["owner"],
+            "url": info["html_url"],
+            "default_branch": info["default_branch"],
+            "stars": info["stars"],
+            "stars_observed_at": _now_iso(),
+            "description": info.get("description"),
+            "usability": usability,
+            "credential_env": _repo_credential_env(e["steps"]),
+            "post_install_steps": post,
+            "capabilities": e["capabilities"],
+            "invoke_hint": (
+                f"git clone {info['html_url']} 后按 README 装依赖+配置+运行；"
+                f"提供 {len(e['capabilities'])} 项能力"
+            ),
+        })
+    return items, unresolved
+
+
+def backfill_plan_repo(
+    plan_path: Path, plan: dict, items: list[dict], unresolved: list[dict],
+    install_list_path: Path,
+) -> list[str]:
+    """repo 形态回填 plan.json 的 _verify 块：记录待 clone 仓库、unresolved、install_list 路径。
+    与 Skill/MCP 路径的 backfill 对应。返回 corrections 留痕。"""
+    corrections: list[str] = []
+    plan["_verify"] = {
+        "verified_at": _now_iso(),
+        "form": "repo",
+        "verified_repos": [
+            {"name": it["name"], "repo": it["repo"], "stars": it["stars"]}
+            for it in items
+        ],
+        "unresolved": [
+            {"name": u["name"], "reason": u["reason"], "source_ref": u.get("source_ref")}
+            for u in unresolved
+        ],
+        "item_total": len(items),
+        "install_list": str(install_list_path),
+        "corrections": [],  # 先占位再回填，保证字段存在
+        "note": "repo 形态：clone&use，整仓 clone + 装依赖 + 配置 + 运行（章程 D2/D20）。",
+    }
+    corrections.append(
+        f"_verify: repo 形态回填（{len(items)} 仓库待 clone / {len(unresolved)} unresolved）"
+    )
+    plan["_verify"]["corrections"] = corrections
+    plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+    return corrections
+
+
+def _verify_repo(source_dir: Path, plan_path: Path, plan: dict) -> dict:
+    """repo（clone&use）形态溯源（章程 D2）：聚合 form∈{config,code,repo} 的能力到其 github
+    仓，一个仓 = 一个 item（form=repo, install_method=clone）。一手 probe_repo 核实仓库存在
+    + 星数，从 plan install_steps 推 usability（needs_credentials/needs_runtime/needs_config/
+    ready，D22 反黑箱）。产 install_list.json + 回填 plan._verify。纯 GitHub curl，不调 LLM。
+    """
+    items, unresolved = group_repo_items(plan)
+
+    install_list_path = source_dir / "install_list.json"
+    install_list = {
+        "source_video": source_dir.name,
+        "install_method": "clone",
+        "form": "repo",
+        "note": "repo 形态：每个 item = 一个要 git clone 下来本地跑的开源项目；"
+                "install 时 clone 到本地 + 装依赖 + 配置 + 运行（不改 ~/.claude/skills/）",
+        "items": items,
+        "skills": items,  # 兼容别名，与 items 同数组引用
+        "unresolved": unresolved,
+        "total": len(items),
+        "generated_at": _now_iso(),
+    }
+    install_list_path.write_text(
+        json.dumps(install_list, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    corrections = backfill_plan_repo(plan_path, plan, items, unresolved, install_list_path)
+    return {
+        "source_video": source_dir.name,
+        "form": "repo",
+        "item_total": len(items),
+        "unresolved_count": len(unresolved),
+        "install_list": str(install_list_path),
+        "corrections": corrections,
+    }
+
+
 # ---- 直接运行：python -m skillbrew.verify <源目录> ----
 def _main() -> int:
     import sys
@@ -923,6 +1137,10 @@ def _main() -> int:
     form = s.get("form", "Skill")
     if form == "MCP":
         print(f"[OK] MCP 形态核实：解析命中 {s['item_total']} 个 / unresolved {s['unresolved_count']} 个")
+        print(f"     install_list → {s['install_list']}")
+        print(f"     plan.json 纠正 {len(s['corrections'])} 处")
+    elif form == "repo":
+        print(f"[OK] repo 形态核实：待 clone 仓库 {s['item_total']} 个 / unresolved {s['unresolved_count']} 个")
         print(f"     install_list → {s['install_list']}")
         print(f"     plan.json 纠正 {len(s['corrections'])} 处")
     else:

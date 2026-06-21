@@ -36,7 +36,7 @@ import re
 from pathlib import Path
 
 from . import registry
-from .verify import parse_frontmatter  # 复用 SKILL.md frontmatter 轻量解析
+from .verify import parse_frontmatter, parse_github_urls  # 复用 frontmatter 解析 + GitHub URL 解析
 
 SKILL_MD = "SKILL.md"
 # 描述共享 ≥N 个有意义词才标 merge 候选。取 3（而非 2）求精：merge 是"建议人工确认"
@@ -167,6 +167,54 @@ def scan_local_mcps(claude_json_path: Path | str | None = None,
     return out
 
 
+# ---- 本地扫描：扫已 clone 的「克隆即用」仓库（repo 形态）----
+
+def _git_origin_repo(repo_path: Path) -> str | None:
+    """读 .git/config 取 origin 的 GitHub URL，解析出 owner/repo 全名。失败返回 None。
+
+    纯标准库读 INI 式 .git/config，不调 git 子进程（去重不依赖外部工具、不联网）。
+    复用 verify.parse_github_urls 容忍 https / git@ / .git 后缀等写法。.git 为文件
+    （worktree/submodule）或无 origin → None，由调用方用目录名兜底。
+    """
+    cfg = repo_path / ".git" / "config"
+    if not cfg.exists():
+        return None
+    try:
+        text = cfg.read_text(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001  读不到不阻塞，退回目录名
+        return None
+    urls = parse_github_urls(text)
+    if urls:
+        owner, repo = urls[0]
+        return f"{owner}/{repo}"
+    return None
+
+
+def scan_local_repos(clones_dir: Path | str | None = None) -> list[dict]:
+    """扫克隆即用仓库落地目录，返回每个已 clone 仓库的基准信息。
+
+    每个 repo = clones_dir 下一个含 .git 的子目录。repo 全名优先取自 git remote
+    origin（精准），无 remote 则用目录名兜底（手动 clone 改了名也能粗匹配）。
+    返回 [{name, repo, path, source}]，按 (repo) 去重。目录不存在 → []。
+    """
+    from . import config  # 延迟导入，与 scan_local_mcps 同风格
+    out: list[dict] = []
+    seen: set[str] = set()
+    base = Path(clones_dir) if clones_dir else config.repo_clones_dir()
+    if not base.is_dir():
+        return out
+    for sub in sorted(base.iterdir()):
+        if not sub.is_dir() or not (sub / ".git").exists():
+            continue
+        repo_full = _git_origin_repo(sub) or sub.name
+        key = repo_full.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"name": sub.name, "repo": repo_full, "path": str(sub), "source": "disk"})
+    return out
+
+
 def load_registry_skills(db_path: Path | str | None = None) -> list[dict]:
     """从台账读全部 skill（active+merged）做基准。台账不存在（全新机）返回 []。"""
     db_path = Path(db_path) if db_path else registry.DB_PATH
@@ -236,14 +284,21 @@ def build_baseline(skill_dirs: list[Path], db_path: Path | str | None = None) ->
     entries = sorted(by_key.values(), key=lambda x: x["name"])
     mcps = scan_local_mcps()
     mcp_keys = {_key(m["name"]) for m in mcps if _key(m["name"])}
+    # repo 基准 = 已 clone 仓库的 owner/repo 小写键集合（如 harry0703/moneyprinterturbo）。
+    # 不走 _key（_key 会把 / 当分隔符抹掉，使 a/b 与 ab 撞键）；owner/repo 全名本身已是
+    # 干净主键，直接 lower 即可。repo 与 skill/MCP 名空间不同，三者各算一个 distinct。
+    repos = scan_local_repos()
+    repo_keys = {r["repo"].lower() for r in repos if r.get("repo")}
     counts = {
-        "distinct": len(set(by_key.keys()) | mcp_keys),  # 能力去重：skill + mcp 同名算一个
+        "distinct": len(set(by_key.keys()) | mcp_keys | repo_keys),  # 能力去重：skill + mcp + repo 各算一个
         "disk_entries": len(disk),
         "registry_rows": len(reg),
         "mcp_registered": len(mcps),
+        "repo_cloned": len(repos),
         "by_status": _status_counts(entries),
     }
-    return {"entries": entries, "counts": counts, "mcps": mcps, "mcp_keys": mcp_keys}
+    return {"entries": entries, "counts": counts, "mcps": mcps, "mcp_keys": mcp_keys,
+            "repos": repos, "repo_keys": repo_keys}
 
 
 # ---- 描述关键词重叠（merge 候选）----
@@ -283,6 +338,7 @@ def classify(install_list: dict, baseline: dict) -> list[dict]:
     """
     entries = baseline["entries"]
     mcp_keys = baseline.get("mcp_keys", set())
+    repo_keys = baseline.get("repo_keys", set())
     # 预算每个基准条目的关键词集（仅磁盘带描述的才有）
     base_kw: list[tuple[dict, set[str]]] = [
         (e, _keywords(e["display_name"] + " " + e["description"])) for e in entries
@@ -293,7 +349,13 @@ def classify(install_list: dict, baseline: dict) -> list[dict]:
     decisions: list[dict] = []
     for s in items:
         raw_form = s.get("form") or "Skill"
-        form = "MCP" if str(raw_form).strip().upper() == "MCP" else "Skill"
+        rf = str(raw_form).strip()
+        if rf.upper() == "MCP":
+            form = "MCP"
+        elif rf.lower() == "repo":
+            form = "repo"
+        else:
+            form = "Skill"
         cand_name = s["name"]
         ck = _key(cand_name)
         category = s.get("category", "")
@@ -311,6 +373,28 @@ def classify(install_list: dict, baseline: dict) -> list[dict]:
                 decisions.append({
                     "name": cand_name, "form": "MCP", "category": category,
                     "decision": "new", "reason": "本地未注册该 MCP",
+                })
+            continue
+
+        if form == "repo":
+            # repo 判据：item 带 repo 全名（如 harry0703/MoneyPrinterTurbo），归一化为
+            # owner/repo 小写键，查本地已 clone 仓库集合（repo_keys）。已 clone → skip
+            # （本机已能跑该开源项目）；未 clone → new（待 git clone）。repo 无整并语义
+            # （不像 skill 可跨名合并），不产 merge。
+            repo_full = s.get("repo") or ""
+            rk = repo_full.lower() if repo_full else ""
+            if rk and rk in repo_keys:
+                decisions.append({
+                    "name": cand_name, "form": "repo", "category": category,
+                    "decision": "skip",
+                    "reason": f"已克隆：repo {repo_full}",
+                    "target": repo_full,
+                })
+            else:
+                decisions.append({
+                    "name": cand_name, "form": "repo", "category": category,
+                    "decision": "new",
+                    "reason": f"本地未克隆该仓库（{repo_full or 'repo 全名缺失'}）",
                 })
             continue
 
@@ -459,7 +543,8 @@ def _main() -> int:
     print(f"[去重] {src}")
     r = dedup(src, skill_dirs=[Path(d) for d in dirs] or None)
     bc = r["baseline"]["counts"]
-    print(f"[OK] 基准 {bc['distinct']} 个 distinct（磁盘 {bc['disk_entries']} + 台账 {bc['registry_rows']} + 已注册 MCP {bc['mcp_registered']}）")
+    repo_n = bc.get("repo_cloned", 0)
+    print(f"[OK] 基准 {bc['distinct']} 个 distinct（磁盘 {bc['disk_entries']} + 台账 {bc['registry_rows']} + 已注册 MCP {bc['mcp_registered']} + 已克隆 repo {repo_n}）")
     forms = " ".join(f"{k}={v}" for k, v in r["by_form"].items()) or "—"
     print(f"     new={r['summary']['new']}  merge={r['summary']['merge']}  skip={r['summary']['skip']}  [{forms}]")
     if r.get("unresolved"):
