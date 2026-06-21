@@ -1,6 +1,8 @@
-# HANDOFF · skillbrew Step 5（r19）✅ + r20 Path A✅ + recommend 判断步积木 A–G 全✅（含 D）→ recommend 闭环全通
+# 技能酿造局 · 交接文档
 
-> 写给明天的我自己：从这份文档 + 记忆里的 `skillbrew-step5-handoff` 指针加载断点，继续往前推进。
+> **HANDOFF · skillbrew Step 5（r19）✅ + r20 Path A✅ + recommend 判断步积木 A–G 全✅（含 D）→ recommend 闭环全通**
+
+写给明天的我自己：从这份文档 + 记忆里的 `skillbrew-step5-handoff` 指针加载断点，继续往前推进。
 > 落笔日期 2026-06-20（深夜补 r20；r21/r22/积木A–G/D 后续补；GitHub 上传补）。**最新节 = 顶部「✅ 已推 GitHub 私有仓库 + 全量脱敏复扫通过」**（已推 `Rookage/skillbrew` 私有库，data/ 不传，脱敏三关全过，GitHub 端 fresh-clone 复扫 28/28 零警报；用户立「不换 key」规则——脱敏靠 .env 排除+零痕迹，覆盖旧 §8 推前重生成 key）。其下「✅ D22 调用方式渲染完成（record.py）」（record 看板新增「怎么调用装好的技能」段，补齐 recommend.py:17-18 委派的 D22，8 零token 测试 + 零回归 diff + 幂等 全绿）。其下「✅ 技能可见性修复（本机两抽屉）」（已修+终检绿）、「积木 D 完成」「积木 A–G 纯本地部分完成」「r22/r21 更新」「r20 完成总结」为历史。**recommend 判断步 7 块积木全部完成、自测绿**；ingest→understand→plan→verify→dedup→recommend→install→record 闭环全通。下文 §1-§9 为 r19 落地规格留档（历史记录，勿再照抄执行）。
 
 ---

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "skillbrew"
 version = "0.0.1"
-description = "AI 能力包管理器：把素材消化成可执行计划，授权后安装成 AI 真实能力，并维护可去重累加的能力台账"
+description = "技能酿造局：丢链接进去，酿出可装的能力，自动去重，装完出报告，让你清楚 Agent 里有什么、怎么调"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
