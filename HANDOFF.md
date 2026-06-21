@@ -13,7 +13,7 @@
 - 用户说「继续执行」**之后**，我按此流程加载再开干：
   1. Read 本 §0 段 + `PROJECT_CHARTER.md` 全文（北极星 + 决策表 D1–D22 + §11 修订记录）。
   2. 记忆已通过 `MEMORY.md` 自动注入；重点指针 `skillbrew-step5-handoff`。
-  3. `cd ~/skillbrew`，确认 `python -c "from skillbrew import cli"` 可导入。
+  3. `cd ai-self-evolution/skillbrew（仓根）`，确认 `python -c "from skillbrew import cli"` 可导入。
   4. 看下方「立即待办」，**直接接着干，不重复确认已完成的事**。
 - 触发词只有「继续执行」这四个字算数；其他表述（"继续""接着做"等）不算，按普通对话回应。
 
