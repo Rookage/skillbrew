@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -150,3 +151,21 @@ def repo_clones_dir() -> Path:
     if env_hint:
         return Path(env_hint)
     return Path.home() / ".claude" / "clones"
+
+
+# ---- 终端编码兜底（Windows GBK 防 print 崩，issue #5）----
+
+def ensure_utf8_stdout() -> None:
+    """把 stdout/stderr 统一强制成 UTF-8 + errors=replace。
+
+    Windows 默认控制台编码 GBK，print 含 ``\\u200b``（零宽空格，B站/抖音标题常见）等
+    字符时直接 ``UnicodeEncodeError: 'gbk' codec can't encode ...`` 崩在最后一刻——
+    明明下载成功却因打日志崩（issue #5）。统一 UTF-8 后所有 print 都不会因编码炸，
+    编不出就 replace 成 ``?`` 而非抛异常。非 TextIOWrapper（如重定向到文件）或无
+    ``reconfigure``（极老 Python）时静默跳过，不影响库式调用。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+        except (AttributeError, ValueError, OSError):
+            pass

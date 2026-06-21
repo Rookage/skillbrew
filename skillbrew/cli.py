@@ -23,7 +23,8 @@ from pathlib import Path
 
 from . import __version__
 from . import llm
-from .config import Config, load_config
+from . import notify
+from .config import Config, ensure_utf8_stdout, load_config
 
 
 def _print_config(cfg: Config) -> None:
@@ -625,6 +626,21 @@ def cmd_install(args: argparse.Namespace) -> int:
             names = ", ".join(d["name"] for d in r["skipped_config"])
             print(f"   跳过需配置：{len(r['skipped_config'])} 个 → {names}（替换占位符后重跑）")
         print(f"   {r.get('note', '')}")
+        # 邮件通知（可选）：install --approve 真装完成才发 HTML 报告（用户立规，
+        # 延续 feedback-install-report-email）。未配置→主动提示一次（不报错）；
+        # 配置→发完回执；发送本身失败也不影响安装结果。
+        if notify.is_configured():
+            res = notify.send_html(
+                f"[skillbrew] 安装完成 · {r.get('source_video', '')}",
+                notify.install_report_html(r, src),
+            )
+            if res.get("success"):
+                print(f"   📧 已发完成报告邮件 → {res.get('to')}")
+            else:
+                reason = res.get("error") or res.get("reason") or "未知"
+                print(f"   ⚠ 邮件未发出：{reason}")
+        else:
+            print(f"   💡 {notify.unconfigured_hint()}")
     else:
         print("\n   " + r.get("note", ""))
         print("   加 --approve 才真落盘 + 写台账。")
@@ -698,6 +714,10 @@ def cmd_record(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # 入口统一 UTF-8：Windows 默认 GBK 控制台 print 含 ​（零宽空格）等字符会崩
+    # 在最后一刻（明明下载成功却因打日志崩，issue #5）。统一 UTF-8+errors=replace，
+    # 所有 print 都不会因编码炸。库式调用（import 后调函数）不受影响。
+    ensure_utf8_stdout()
     parser = argparse.ArgumentParser(
         prog="skillbrew",
         description="AI 能力包管理器：素材 → 消化 → 计划 → 授权安装 → 能力台账",

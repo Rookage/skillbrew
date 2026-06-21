@@ -27,16 +27,55 @@ _VISION_PROMPT = (
 )
 
 
+def _warn_asr_unavailable(model_size: str, local_path: str, e: Exception) -> None:
+    """ASR（语音转文字）失败时跳出人类可读提醒（issue #3/#4，用户立规）。"""
+    print("=" * 64)
+    print("[警告] ASR（语音转文字）模型加载/转写失败，本轮跳过字幕。")
+    print(f"  原因：{type(e).__name__}: {str(e)[:200]}")
+    if local_path:
+        print(f"  你设了 WHISPER_MODEL_PATH={local_path}，但该路径加载失败——")
+        print("  请检查目录是否完整（应含 model.bin / config.json / tokenizer 等）。")
+    else:
+        print(f"  想用的模型：{model_size}（HuggingFace: Systran/faster-whisper-{model_size}）")
+        print("  镜像 hf-mirror.com 拉不下来时，可：")
+        print(f"    1) 确认能访问 https://hf-mirror.com/Systran/faster-whisper-{model_size}")
+        print(f"    2) 或翻墙从官方下：https://huggingface.co/Systran/faster-whisper-{model_size}")
+        print("       下好整个目录后，在 .env 设 WHISPER_MODEL_PATH=<那个目录> 走本地模型。")
+    print("  ⚠ 没字幕也能继续跑（关键帧看图不受影响），但消化质量会打折。")
+    print("=" * 64)
+
+
 def transcribe(audio_path: Path, out_dir: Path, *, model_size: str = "small") -> dict:
-    """faster-whisper ASR。返回 {text, segments}，并落 transcript.json/.txt。"""
+    """faster-whisper ASR。返回 {text, segments}，并落 transcript.json/.txt。
+
+    模型下载/加载失败时**报错 + 跳出人类可读提醒 + 降级跳过**（用户立规，issue #3/#4）：
+    没字幕也能继续跑后续管线（质量打折，但流程不断）。降级=写空 transcript.json/.txt、返回空。
+    plan.py 的兜底是「空字幕 + 非空关键帧」仍可消化，故空 transcript 必须落盘（不能省）。
+    """
+    # huggingface_hub 只认 HF_ENDPOINT 这一个镜像 env；HF_HUB_ENDPOINT 是无效变量（旧代码误设，已删）
     os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
-    os.environ.setdefault("HF_HUB_ENDPOINT", "https://hf-mirror.com")
     from faster_whisper import WhisperModel  # 懒导入（可选依赖）
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    m = WhisperModel(model_size, device="cpu", compute_type="int8")
-    segs, info = m.transcribe(str(audio_path), language="zh", vad_filter=True, beam_size=5)
+
+    # 优先用本地模型目录（终极离线兜底）：env 指向已下好的 faster-whisper-small 目录，
+    # WhisperModel 原生接受本地路径作首参，完全不触发网络下载。
+    local_path = (os.environ.get("WHISPER_MODEL_PATH") or "").strip()
+    model_arg = local_path or model_size
+
+    try:
+        m = WhisperModel(model_arg, device="cpu", compute_type="int8")
+        segs, info = m.transcribe(str(audio_path), language="zh", vad_filter=True, beam_size=5)
+    except Exception as e:  # noqa: BLE001  下载/加载/转写失败（LocalEntryNotFoundError/FileMetadataError 等）
+        _warn_asr_unavailable(model_size, local_path, e)
+        (out_dir / "transcript.json").write_text(
+            json.dumps({"segments": [], "text": "", "language": ""}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        (out_dir / "transcript.txt").write_text("", encoding="utf-8")
+        return {"segments": [], "text": ""}
+
     seg_list = [{"start": round(s.start, 2), "end": round(s.end, 2), "text": s.text.strip()} for s in segs]
     full = "".join(s["text"] for s in seg_list)
     (out_dir / "transcript.json").write_text(
