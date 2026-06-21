@@ -207,39 +207,37 @@ def fetch_douyin(source: str, out_dir: Path) -> DouyinFetchResult:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # 用 yt-dlp 下载视频+音频
+    # 用 yt-dlp 下载视频（抖音格式是音视频合一的 mp4）
     video_tmp = out_dir / "video_tmp.mp4"
-    audio_tmp = out_dir / "audio_tmp.mp3"
 
-    # 下载视频（无音频）
+    # 下载视频（含音频，抖音格式是合一的）+ 写 info.json
     _run([
-        "yt-dlp", "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio",
-        "--merge-output-format", "mp4",
+        "yt-dlp", "-f", "best[ext=mp4]/best",
         "-o", str(video_tmp),
+        "--write-info-json",
         "--no-playlist",
         source,
     ])
 
-    # 提取音频
-    _run([
-        "yt-dlp", "-x", "--audio-format", "mp3",
-        "-o", str(audio_tmp),
-        "--no-playlist",
-        source,
-    ])
-
-    # 重命名
+    # 重命名视频
     video_path = out_dir / "video.mp4"
-    audio_path = out_dir / "audio.mp3"
     video_tmp.rename(video_path)
-    audio_tmp.rename(audio_path)
 
-    # 写元数据（yt-dlp 的 info.json）
-    info_path = out_dir / "info.json"
-    if info_path.exists():
-        info_path.rename(out_dir / "meta.json")
+    # 用 ffmpeg 从视频提取音频
+    audio_path = out_dir / "audio.mp3"
+    _run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-i", str(video_path),
+        "-vn", "-c:a", "libmp3lame", "-q:a", "4",
+        str(audio_path),
+    ])
+
+    # 读取 yt-dlp 的 info.json（文件名跟输出模板：video_tmp.info.json）
+    info_json = out_dir / "video_tmp.info.json"
+    if info_json.exists():
+        info_json.rename(out_dir / "meta.json")
     else:
-        # 手动写基本元数据
+        # 兜底：手动写基本元数据
         meta = {"id": video_id, "url": source, "title": f"抖音视频 {video_id}"}
         (out_dir / "meta.json").write_text(
             json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -248,7 +246,7 @@ def fetch_douyin(source: str, out_dir: Path) -> DouyinFetchResult:
     # 读取元数据拿标题
     meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
     title = meta.get("title", f"抖音视频 {video_id}")
-    duration = meta.get("duration", 0)
+    duration = meta.get("duration", 0) or 0
 
     return DouyinFetchResult(
         video_id=video_id,

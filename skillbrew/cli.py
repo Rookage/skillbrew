@@ -249,9 +249,11 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         print(f"     视频: {r.video_path} ({r.video_path.stat().st_size // 1024}KB)")
         print(f"     音频: {r.audio_path} ({r.audio_path.stat().st_size // 1024}KB)")
     elif "douyin.com" in src or src.isdigit():
-        # 抖音
-        video_id = ingest.parse_douyin_id(src) if src.isdigit() else None
-        src_dir = cfg.data_dir / "sources" / f"douyin_{video_id or 'unknown'}"
+        # 抖音：先解析短链拿真实 URL，再提取 video_id
+        if "v.douyin.com" in src:
+            src = ingest._resolve_short_url(src)
+        video_id = ingest.parse_douyin_id(src)
+        src_dir = cfg.data_dir / "sources" / f"douyin_{video_id}"
         r = ingest.fetch_douyin(src, src_dir)
         print(f"[OK] {r.title}")
         print(f"     video_id={r.video_id} 时长={r.duration}s")
@@ -337,7 +339,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
     print(f"[溯源] {src}")
 
     def on_progress(s: dict, i: int, n: int) -> None:
-        print(f"   [{i + 1}/{n}] 取 {s['category']}/{s['name']} SKILL.md ...", flush=True)
+        cat = s.get("category", "")
+        head = f"{cat}/" if cat else ""
+        print(f"   [{i + 1}/{n}] 取 {head}{s['name']} SKILL.md ...", flush=True)
 
     try:
         summary = verify_mod.verify(src, repo_override=args.repo, on_progress=on_progress)
@@ -383,7 +387,7 @@ def cmd_dedup(args: argparse.Namespace) -> int:
 
     def on_progress(stage: str, n) -> None:
         if stage == "classify":
-            print(f"   逐项比对 install_list {n} 个 skill ...", flush=True)
+            print(f"   逐项比对 install_list {n} 个能力 ...", flush=True)
 
     try:
         summary = dedup_mod.dedup(src, skill_dirs=skill_dirs, on_progress=on_progress)
@@ -439,10 +443,10 @@ def cmd_recommend(args: argparse.Namespace) -> int:
     dedup_data = json.loads((src / "dedup.json").read_text(encoding="utf-8"))
     ilist = json.loads((src / "install_list.json").read_text(encoding="utf-8"))
     decisions = dedup_data.get("decisions", [])
-    descriptions = {
-        s.get("name", ""): (s.get("description") or "")
-        for s in ilist.get("skills", [])
-    }
+    # 描述 + usability 形态无关地取（MCP 项无 description，须用 capability_name+invoke_hint 拼对等描述，
+    # 否则 score_keyword 扣「无描述」误杀；usability 须从 install_list 透传，dedup decision 不带）
+    descriptions = rec.build_descriptions(ilist)
+    usability_map = rec.build_usability(ilist)
 
     # ---- 本机能力画像（D18 动态基准，复用 dedup 扫描口径）----
     skill_dirs = [Path.home() / ".claude" / "skills"]
@@ -460,7 +464,8 @@ def cmd_recommend(args: argparse.Namespace) -> int:
 
     # ---- 按 mode 给 new 候选打分 / 人工勾选 / ai 判断 ----
     if mode == rec.MODE_KEYWORD:
-        new_js = rec.score_keyword_batch(decisions, profile, descriptions=descriptions)
+        new_js = rec.score_keyword_batch(
+            decisions, profile, descriptions=descriptions, usability=usability_map)
     elif mode == rec.MODE_AI:
         from . import llm
         print(f"   [ai] 烧 token 调文本模型 {cfg.text.model}，分批判断（用户在场监控；--limit={args.limit}）...")
@@ -468,11 +473,11 @@ def cmd_recommend(args: argparse.Namespace) -> int:
             tag = "ok" if ok else "FAIL→整批降级「不值得装」"
             print(f"   [ai] 批 {i}/{n}（{bs} 条）→ {tag}")
         new_js = rec.judge_ai(
-            decisions, profile, descriptions=descriptions,
+            decisions, profile, descriptions=descriptions, usability=usability_map,
             cfg=cfg, chat_fn=llm.chat_text, limit=args.limit, on_batch=_on_batch,
         )
     else:  # manual
-        new_js = rec.pick_manual(decisions, descriptions=descriptions)
+        new_js = rec.pick_manual(decisions, descriptions=descriptions, usability=usability_map)
 
     # ---- 合并 skip/merge（trivial 兜底）+ 装配报告 ----
     judgments = rec.merge_judgments(decisions, new_js)
@@ -518,7 +523,15 @@ def cmd_install(args: argparse.Namespace) -> int:
     print(f"[安装] {src}  {mode}")
 
     def on_progress(s: dict, i: int, n: int) -> None:
-        print(f"   [{i + 1}/{n}] 装 {s['category']}/{s['name']} ...", flush=True)
+        form = s.get("form", "Skill")
+        cat = s.get("category", "")
+        head = f"{form}/{cat}" if cat else form
+        if form == "MCP":
+            mcp = s.get("mcp") or {}
+            print(f"   [{i + 1}/{n}] 注册 MCP 服务器 {head}/{s['name']}"
+                  f"（{mcp.get('transport', 'stdio')} -s {mcp.get('scope', 'user')}）...", flush=True)
+        else:
+            print(f"   [{i + 1}/{n}] 装 {head}/{s['name']}（整目录拷）...", flush=True)
 
     try:
         r = install_mod.install(
@@ -532,20 +545,49 @@ def cmd_install(args: argparse.Namespace) -> int:
     print("\n" + "=" * 60)
     print(f"源视频：{r['source_video']}  仓库：{r['verified_repo'] or '(未知)'}")
     print(f"目标目录：{r['target_dir']}  安装前 distinct：{r['before']}")
-    print(f"将装 new：{len(r['to_install'])} 个")
-    for n in r["to_install"]:
-        print(f"  - {n}")
+    # per-item 形态明细（反黑箱 D22）：MCP 列 command/args/scope/usability，Skill 列目标+文件数
+    detail = r.get("items_detail") or []
+    print(f"将装 new：{len(detail)} 个")
+    for it in detail:
+        form = it.get("form", "Skill")
+        usab = it.get("usability", "ready")
+        flag = f" [{usab}]" if usab and usab != "ready" else ""
+        if form == "MCP":
+            cmd = it.get("command", "")
+            argstr = " ".join(it.get("args", []))
+            print(f"  - {it['name']}（MCP，{it.get('transport', 'stdio')} -s {it.get('scope', 'user')}，"
+                  f"{cmd} {argstr}）{flag}")
+        else:
+            print(f"  - {it['name']}（Skill → {it.get('target', '')}）{flag}")
     if r["skipped_merge"]:
         print(f"跳过 merge（人工确认）：{len(r['skipped_merge'])} 个 → {r['skipped_merge']}")
     if r["skipped_deprecated"]:
         print(f"跳过 deprecated：{len(r['skipped_deprecated'])} 个 → {r['skipped_deprecated']}（--include-deprecated 可装）")
     if r["skipped_already"]:
         print(f"跳过已装/已整并：{len(r['skipped_already'])} 个")
+    unresolved = r.get("unresolved") or []
+    if unresolved:
+        print(f"unresolved（待你拍板，不自动包装）：{len(unresolved)} 个")
+        for u in unresolved:
+            print(f"  · {u.get('name')}：{u.get('reason')}（候选：{u.get('candidate', '')}）")
     if args.approve:
         installed = r.get("installed", [])
-        print(f"\n✅ 已落盘 {len(installed)} 个 skill，安装后 distinct：{r.get('after')}")
+        print(f"\n✅ 已落盘 {len(installed)} 个能力，安装后 distinct：{r.get('after')}")
         for s in installed:
-            print(f"  - {s['name']}（{s['file_count']} 文件）→ {s['path']}")
+            form = s.get("form", "Skill")
+            if form == "MCP":
+                usab = s.get("usability", "ready")
+                flag = f" [{usab}]" if usab and usab != "ready" else ""
+                print(f"  - {s['name']}（MCP，{s.get('registered_via')}，scope={s.get('scope')}，"
+                      f"{s.get('transport', 'stdio')}）→ {s.get('path', '')}{flag}")
+            else:
+                print(f"  - {s['name']}（{s.get('file_count', 0)} 文件）→ {s.get('path', '')}")
+        if r.get("skipped_credentials"):
+            names = ", ".join(d["name"] for d in r["skipped_credentials"])
+            print(f"   跳过需凭证：{len(r['skipped_credentials'])} 个 → {names}（配 credential_env 后重跑）")
+        if r.get("skipped_config"):
+            names = ", ".join(d["name"] for d in r["skipped_config"])
+            print(f"   跳过需配置：{len(r['skipped_config'])} 个 → {names}（替换占位符后重跑）")
         print(f"   {r.get('note', '')}")
     else:
         print("\n   " + r.get("note", ""))

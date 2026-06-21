@@ -36,6 +36,8 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+from . import mcp_catalog
+
 API_BASE = "https://api.github.com"
 RAW_BASE = "https://raw.githubusercontent.com"
 UA = "skillbrew"  # GitHub 要求带 User-Agent，否则 403
@@ -243,6 +245,131 @@ def group_skill_dirs(tree: list[dict]) -> list[dict]:
         })
     out.sort(key=lambda x: (x["category"], x["name"]))
     return out
+
+
+# ===================== MCP（模型上下文协议）形态 =====================
+# 章程 D2：产物形态由计划内容决定，不预设。下面这条链处理 form=="MCP" 的能力：
+#   plan.capabilities 的 source_ref 索引 traced_sources 取 MCP 服务器名
+#   → mcp_catalog（brew-formula 硬编码表，D20）查命中/未命中
+#   → 命中建 install item（含注册信息 + usability + 装完前必做），未命中进 unresolved 透明降级
+# 不走 resolve_repo（那是单仓 Skill 架构，MCP 视频常有多个不同仓，会错配）。
+
+
+def group_mcp_items(
+    plan: dict, catalog=mcp_catalog
+) -> tuple[list[dict], list[dict]]:
+    """MCP 形态：遍历 plan.capabilities，按 source_ref 取 traced_sources 里的 MCP 名，
+    查 catalog（brew-formula 表）建 install item；未命中进 unresolved。
+
+    为什么不直接用 capability.name：capability.name 是中文能力描述（如"浏览器自动化操作
+    与前端测试"），真正的 MCP 服务器名在 traced_sources[int(source_ref)-1].name（如
+    "microsoft/playwright-mcp" / "File System MCP"）。source_ref 是 1 起的字符串，
+    traced_sources 是 0 起数组，故 idx = int(source_ref) - 1。
+
+    返回 (items, unresolved)。纯查表，不联网、不调 LLM、不耗配额（章程 D18）。
+    """
+    traced = plan.get("traced_sources", []) or []
+    caps = plan.get("capabilities", []) or []
+    items: list[dict] = []
+    unresolved: list[dict] = []
+    for cap in caps:
+        if (cap.get("form") or "").upper() != "MCP":
+            continue
+        source_ref = cap.get("source_ref")
+        raw_name = ""
+        if source_ref is not None:
+            try:
+                idx = int(source_ref) - 1
+            except (TypeError, ValueError):
+                idx = -1
+            if 0 <= idx < len(traced):
+                raw_name = traced[idx].get("name", "") or ""
+        entry = catalog.lookup(raw_name) if raw_name else None
+        if entry is None:
+            hint = catalog.suggest_candidate(raw_name) if raw_name else None
+            unresolved.append({
+                "name": raw_name or cap.get("name", ""),
+                "reason": hint["reason"] if hint else
+                    "mcp_catalog 未收录：无官方标准 MCP 包，或名称需人工核实（不臆造包装）",
+                "candidate": hint["candidate"] if hint else None,
+                "source_ref": source_ref,
+            })
+            continue
+        items.append({
+            "name": entry.name,
+            "form": "MCP",
+            "install_method": "mcp_register",
+            "mcp": {
+                "transport": entry.transport,
+                "command": entry.command,
+                "args": list(entry.args),
+                "scope": entry.scope_hint,
+            },
+            "repo": entry.repo,
+            "url": entry.url,
+            "stars": None,            # 由 _probe_stars_for_items 探一手星数后回填（刻舟求剑）
+            "stars_observed_at": None,
+            "usability": catalog.usability_of(entry),
+            "credential_env": list(entry.credential_env) if entry.credential_env else None,
+            "env_template": dict(entry.env_template) if entry.env_template else {},
+            "post_install_steps": list(entry.post_install_steps) if entry.post_install_steps else [],
+            "invoke_hint": entry.invoke_hint,
+            "source_ref": source_ref,
+            "capability_name": cap.get("name", ""),  # 中文能力描述，台账/报告展示用
+        })
+    return items, unresolved
+
+
+def _probe_stars_for_items(items: list[dict]) -> None:
+    """对 items 里每个唯一 repo 探一手星数，回填 stars + stars_observed_at（刻舟求剑 §5.3）。
+
+    catalog 本身已是 brew-formula 真相（verified=True），星数仅作参考线索，故失败（404/
+    网络）留 None，不臆造。同 repo 只探一次（如 modelcontextprotocol/servers 被 filesystem/
+    sequential-thinking/github 共用，探一次给三项回填同一星数——是仓库的星数，诚实）。
+    """
+    cache: dict[str, dict | None] = {}
+    for it in items:
+        repo = it.get("repo")
+        if not repo:
+            continue
+        if repo not in cache:
+            owner, _, name = repo.partition("/")
+            cache[repo] = probe_repo(owner, name) if (owner and name) else None
+        info = cache[repo]
+        if info:
+            it["stars"] = info.get("stars")
+            it["stars_observed_at"] = _now_iso()
+
+
+def backfill_plan_mcp(
+    plan_path: Path, plan: dict, items: list[dict], unresolved: list[dict],
+    install_list_path: Path,
+) -> list[str]:
+    """MCP 形态回填 plan.json 的 _verify 块：记录解析命中的 MCP、unresolved、install_list 路径。
+
+    与 Skill 路径的 backfill_plan 对应；MCP 不改 summary 的仓库名叙事（catalog 已是真相），
+    只回填 _verify 供 record/报告取用。返回 corrections 留痕。
+    """
+    corrections: list[str] = []
+    plan["_verify"] = {
+        "verified_at": _now_iso(),
+        "form": "MCP",
+        "verified_mcps": [it["name"] for it in items],
+        "unresolved": [
+            {"name": u["name"], "reason": u["reason"], "source_ref": u["source_ref"]}
+            for u in unresolved
+        ],
+        "item_total": len(items),
+        "install_list": str(install_list_path),
+        "corrections": [],  # 见下；先占位再回填，保证 corrections 字段存在
+        "note": "MCP 形态：由 mcp_catalog（brew-formula 表）解析，未命中者进 unresolved 交用户定夺（D19/D22）。",
+    }
+    corrections.append(
+        f"_verify: MCP 形态回填（{len(items)} 命中 / {len(unresolved)} unresolved）"
+    )
+    plan["_verify"]["corrections"] = corrections
+    plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+    return corrections
 
 
 def raw_url(owner: str, repo: str, branch: str, path: str) -> str:
@@ -655,10 +782,13 @@ def backfill_plan(
 
 
 def verify(source_dir: Path, *, repo_override: str | None = None, on_progress=None) -> dict:
-    """对一个源目录跑溯源：读 plan.json → 找真身 repo → 列 skill → 取 frontmatter
-    → 产 install_list.json + 回填纠正 plan.json。返回汇总 dict。
+    """对一个源目录跑溯源：读 plan.json → 按 form 分流 → 产 install_list.json + 回填 plan.json。
 
-    verify 纯 GitHub curl，不调 LLM、不耗 DeepSeek/Agnes 配额、不要 key。
+    章程 D2：产物形态由计划内容决定，不预设。入口读 plan.capabilities 的 form 分流：
+      - 全 Skill → _verify_skill（单仓 resolve_repo + group_skill_dirs + 整目录拷，原逻辑不变）
+      - 任一 MCP → _verify_mcp（多仓：遍历 capabilities 查 mcp_catalog，不走 resolve_repo）
+    两路都产 install_list.json（含规范键 items[] + 兼容别名 skills[]）并回填 plan._verify。
+    verify 纯 GitHub curl / 本地查表，不调 LLM、不耗 DeepSeek/Agnes 配额、不要 key。
     """
     source_dir = Path(source_dir)
     plan_path = source_dir / "plan.json"
@@ -666,6 +796,22 @@ def verify(source_dir: Path, *, repo_override: str | None = None, on_progress=No
         raise RuntimeError(f"没有 plan.json，先跑 plan：{plan_path}")
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
 
+    caps = plan.get("capabilities", []) or []
+    has_mcp = any((c.get("form") or "").upper() == "MCP" for c in caps)
+    if has_mcp:
+        return _verify_mcp(source_dir, plan_path, plan)
+    return _verify_skill(source_dir, plan_path, plan, repo_override=repo_override, on_progress=on_progress)
+
+
+def _verify_skill(
+    source_dir: Path, plan_path: Path, plan: dict,
+    *, repo_override: str | None = None, on_progress=None,
+) -> dict:
+    """Skill 形态溯源：找真身 repo → 列 skill → 取 frontmatter → 产 install_list.json + 回填 plan。
+
+    单仓架构：整条视频只对应一个 GitHub 仓，install 时整目录拷到 ~/.claude/skills/<name>/。
+    原 verify() 逻辑原样搬入，仅补 items[] 兼容别名（同引用）+ form/item_total 供下游统一读。
+    """
     draft_repos = parse_github_urls(json.dumps(plan, ensure_ascii=False))
     if repo_override:
         o, _, r = repo_override.partition("/")
@@ -696,9 +842,11 @@ def verify(source_dir: Path, *, repo_override: str | None = None, on_progress=No
         "branch": branch,
         "raw_base": f"{RAW_BASE}/{owner}/{repo}/{branch}",
         "install_method": "copy_whole_dir",
+        "form": "Skill",
         "note": "每个 skill = 其整个目录；install 时按 dir_path 整目录从 raw_url 拷到 .claude/skills/<name>/",
         "total": len(skills),
-        "skills": skills,
+        "items": skills,   # 规范键（章程 D2，下游统一读 items[]）
+        "skills": skills,  # 兼容别名，与 items 同数组引用
         "generated_at": _now_iso(),
     }
     install_list_path.write_text(
@@ -708,11 +856,52 @@ def verify(source_dir: Path, *, repo_override: str | None = None, on_progress=No
     corrections = backfill_plan(plan_path, plan, info, skills, install_list_path)
     return {
         "source_video": source_dir.name,
+        "form": "Skill",
         "verified_repo": info["full_name"],
         "stars": info["stars"],
         "stars_observed_at": info["stars_observed_at"],
         "how_resolved": how,
         "skill_total": len(skills),
+        "item_total": len(skills),
+        "install_list": str(install_list_path),
+        "corrections": corrections,
+    }
+
+
+def _verify_mcp(source_dir: Path, plan_path: Path, plan: dict) -> dict:
+    """MCP 形态溯源（章程 D2）：遍历 plan.capabilities 查 mcp_catalog 建 install items。
+
+    不走单仓 resolve_repo——MCP 视频常含多个不同仓（playwright/​filesystem/​…​），
+    单仓解析会错配只取 traced_sources[0]。改为逐条 source_ref 取名 → catalog 查表：
+    命中建 item（含注册信息 + usability + 装完前必做），未命中进 unresolved 透明降级
+    交用户定夺（D19 先判 / D22 反黑箱），绝不臆造包装。纯查表 + 一手星数探测。
+    """
+    items, unresolved = group_mcp_items(plan)
+    _probe_stars_for_items(items)
+
+    install_list_path = source_dir / "install_list.json"
+    install_list = {
+        "source_video": source_dir.name,
+        "install_method": "mcp_register",
+        "form": "MCP",
+        "note": "MCP 形态：每个 item = 一个 MCP 服务器；install 时按 mcp 注册到 ~/.claude.json"
+                "（claude mcp add -s user [-- <command> <args...>]），不改 ~/.claude/skills/",
+        "items": items,
+        "skills": items,  # 兼容别名，与 items 同数组引用（旧下游读 skills[] 仍可用）
+        "unresolved": unresolved,
+        "total": len(items),
+        "generated_at": _now_iso(),
+    }
+    install_list_path.write_text(
+        json.dumps(install_list, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    corrections = backfill_plan_mcp(plan_path, plan, items, unresolved, install_list_path)
+    return {
+        "source_video": source_dir.name,
+        "form": "MCP",
+        "item_total": len(items),
+        "unresolved_count": len(unresolved),
         "install_list": str(install_list_path),
         "corrections": corrections,
     }
@@ -731,10 +920,16 @@ def _main() -> int:
         repo_override = sys.argv[sys.argv.index("--repo") + 1]
     print(f"[溯源] {src}")
     s = verify(src, repo_override=repo_override)
-    print(f"[OK] 一手核实：{s['verified_repo']}（⭐{s['stars']}，{s['stars_observed_at']}）")
-    print(f"     定位：{s['how_resolved']}")
-    print(f"     全仓 skill {s['skill_total']} 个 → {s['install_list']}")
-    print(f"     plan.json 纠正 {len(s['corrections'])} 处")
+    form = s.get("form", "Skill")
+    if form == "MCP":
+        print(f"[OK] MCP 形态核实：解析命中 {s['item_total']} 个 / unresolved {s['unresolved_count']} 个")
+        print(f"     install_list → {s['install_list']}")
+        print(f"     plan.json 纠正 {len(s['corrections'])} 处")
+    else:
+        print(f"[OK] 一手核实：{s['verified_repo']}（⭐{s['stars']}，{s['stars_observed_at']}）")
+        print(f"     定位：{s['how_resolved']}")
+        print(f"     全仓 skill {s['skill_total']} 个 → {s['install_list']}")
+        print(f"     plan.json 纠正 {len(s['corrections'])} 处")
     return 0
 
 

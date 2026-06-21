@@ -95,6 +95,8 @@ class Judgment:
     signals: list[str] = field(default_factory=list)  # 命中的判分信号（透明可追）
     target: str = ""                              # merge/skip 的目标能力名
     mode: str = ""                                # 由哪个模式产出（keyword/manual/ai/trivial）
+    form: str = "Skill"                           # 产物形态（Skill/MCP/...）；形态无关判值不值得，仅供 install/record 分发与展示
+    usability: str = "ready"                      # 装完即可用度（ready/needs_credentials/needs_runtime/needs_config，D22 反黑箱透明标注）
 
 
 def judge_trivial(decision: dict) -> Judgment | None:
@@ -106,17 +108,18 @@ def judge_trivial(decision: dict) -> Judgment | None:
     """
     d = decision.get("decision", "")
     name = decision.get("name", "")
+    form = decision.get("form", "Skill")
     if d == "skip":
         return Judgment(
             name=name, decision=d, verdict=V_INSTALLED,
             reason=decision.get("reason", "已装/已整并"),
-            target=decision.get("target", ""), mode="trivial",
+            target=decision.get("target", ""), mode="trivial", form=form,
         )
     if d == "merge":
         return Judgment(
             name=name, decision=d, verdict=V_MERGE,
             reason=decision.get("reason", "描述重叠，建议人工确认整并"),
-            target=decision.get("target", ""), mode="trivial",
+            target=decision.get("target", ""), mode="trivial", form=form,
         )
     return None  # new：留给 B/D/C
 
@@ -141,6 +144,7 @@ def merge_judgments(
                     name=name, decision="new", verdict=V_NOT_WORTH,
                     reason="未拿到打分判断，默认不装（防静默漏判）",
                     mode="(missing)",
+                    form=dec.get("form", "Skill"),
                 )
             out.append(j)
         else:
@@ -156,6 +160,68 @@ def approved_names(judgments: list[Judgment]) -> list[str]:
     建议整并（merge）须人工另确认，不计入自动 approved；已装/不值得装跳过。
     """
     return [j.name for j in judgments if j.verdict == V_WORTH]
+
+
+def approved_items(judgments: list[Judgment], install_list: dict) -> list[dict]:
+    """install 直接消费的 approved 子集（D20 挑着买）：verdict=值得装 的候选，
+    按 install_list.items 名反查完整安装条目（form/mcp/install_method/usability 等）。
+
+    Judgment 只带 name/verdict/form/usability，不带 mcp/install_method —— 故需 install_list
+    反查补全。install 拿到即可按 item["form"] 分发（Skill 整目录拷 / MCP 注册）。
+    skills[] 兼容旧 artifact（与 items[] 同数组引用）。approved_names() 保留向后兼容。
+    """
+    items = install_list.get("items") or install_list.get("skills", [])
+    by_name = {it.get("name", ""): it for it in items if it.get("name")}
+    out: list[dict] = []
+    for j in judgments:
+        if j.verdict != V_WORTH:
+            continue
+        item = by_name.get(j.name)
+        if item is None:
+            # approved 但 install_list 无对应条目（不应发生）：退回 Judgment 字段保条目不丢
+            item = {"name": j.name, "form": j.form, "usability": j.usability}
+        out.append(item)
+    return out
+
+
+def build_descriptions(install_list: dict) -> dict[str, str]:
+    """形态无关地构造 name→描述，喂给 keyword/manual/ai 打分判断（积木 B/C/D 用）。
+
+    Skill 项用 description；MCP 项无 description 字段，用 capability_name + invoke_hint
+    拼装形态无关描述。旧 artifact 只有 skills[] 也兼容。
+
+    修隐藏 bug：CLI 原从 install_list["skills"][].get("description") 取描述，MCP 项
+    无 description → 空串 → score_keyword 扣 0.2（无描述）误判不值得装。本函数按形态
+    取对等描述，保证 MCP 候选不被「无描述」误杀。
+    """
+    items = install_list.get("items") or install_list.get("skills", [])
+    out: dict[str, str] = {}
+    for it in items:
+        name = it.get("name", "")
+        if not name:
+            continue
+        desc = (it.get("description") or "").strip()
+        if not desc:
+            # MCP 项无 description：用 capability_name + invoke_hint 拼装形态无关描述
+            parts = [it.get("capability_name", ""), it.get("invoke_hint", "")]
+            desc = " ".join(p for p in parts if p).strip()
+        out[name] = desc
+    return out
+
+
+def build_usability(install_list: dict) -> dict[str, str]:
+    """构造 name→usability 供 Judgment 标注（D22 反黑箱透明标注）。
+
+    install_list 的 items 带 usability（ready/needs_credentials/needs_runtime/
+    needs_config），但 dedup decisions 不带（dedup 只判重复、不带安装画像）。故从
+    install_list 取 usability 透传给打分判断，避免 MCP 候选一律误标 ready（如 github
+    需凭证、playwright 需运行时却被当 ready）。
+    """
+    items = install_list.get("items") or install_list.get("skills", [])
+    return {
+        it.get("name", ""): it.get("usability", "ready")
+        for it in items if it.get("name")
+    }
 
 
 def rollup_source_verdict(
@@ -291,6 +357,7 @@ def score_keyword(
     profile: Profile,
     *,
     description: str = "",
+    usability: str = "ready",
 ) -> Judgment:
     """keyword 模式：纯规则给单条 new 候选打分（0~1），不烧 token、不要 key。
 
@@ -346,6 +413,8 @@ def score_keyword(
     return Judgment(
         name=name, decision="new", verdict=verdict, reason=reason,
         score=round(score, 2), signals=signals, mode="keyword",
+        form=candidate.get("form", "Skill"),
+        usability=usability or "ready",
     )
 
 
@@ -354,15 +423,24 @@ def score_keyword_batch(
     profile: Profile,
     *,
     descriptions: dict[str, str] | None = None,
+    usability: dict[str, str] | None = None,
 ) -> list[Judgment]:
     """对一批 new 候选逐条 keyword 打分。
 
     descriptions：name→描述（由 CLI 从 install_list.json 读好传入，纯函数不读盘）。
+    usability：name→usability（D22 透明标注，同样从 install_list 读好传入）。dedup
+    decisions 不带 usability，须由 CLI 从 install_list.items 透传，否则 MCP 候选
+    一律误标 ready（如 github 需凭证被当 ready）。
     非 new 候选跳过（由 merge_judgments 用 judge_trivial 兜底）。
     """
     descriptions = descriptions or {}
+    usability = usability or {}
     return [
-        score_keyword(c, profile, description=descriptions.get(c.get("name", ""), ""))
+        score_keyword(
+            c, profile,
+            description=descriptions.get(c.get("name", ""), ""),
+            usability=usability.get(c.get("name", ""), "ready"),
+        )
         for c in candidates
         if c.get("decision") == "new"
     ]
@@ -384,6 +462,7 @@ def pick_manual(
     candidates: list[dict],
     *,
     descriptions: dict[str, str] | None = None,
+    usability: dict[str, str] | None = None,
     input_fn=input,
     print_fn=print,
 ) -> list[Judgment]:
@@ -391,9 +470,11 @@ def pick_manual(
 
     交互：打印编号清单 → 用户输「编号,编号」选装；a=全装；n 或回车=全不装；q=退出。
     选中→值得装，未选→不值得装。
+    usability：name→usability（从 install_list 透传；dedup decisions 不带 usability）。
     input_fn/print_fn 可注入便于测（默认 input/print；非交互环境须注入 mock，否则卡 stdin）。
     """
     descriptions = descriptions or {}
+    usability = usability or {}
     news = [c for c in candidates if c.get("decision") == "new"]
     if not news:
         return []
@@ -420,14 +501,17 @@ def pick_manual(
     judgments: list[Judgment] = []
     for idx, c in enumerate(news):
         name = c.get("name", "")
+        u = usability.get(name, "ready")
         if idx in chosen:
             judgments.append(Judgment(
                 name=name, decision="new", verdict=V_WORTH,
-                reason="人工勾选安装", mode="manual"))
+                reason="人工勾选安装", mode="manual",
+                form=c.get("form", "Skill"), usability=u))
         else:
             judgments.append(Judgment(
                 name=name, decision="new", verdict=V_NOT_WORTH,
-                reason="人工未勾选", mode="manual"))
+                reason="人工未勾选", mode="manual",
+                form=c.get("form", "Skill"), usability=u))
     return judgments
 # ---- 积木 D：ai LLM 判断 judge_ai（烧 token，用户在场，最后实现）------------------
 
@@ -535,6 +619,7 @@ def judge_ai(
     profile: Profile,
     *,
     descriptions: dict[str, str] | None = None,
+    usability: dict[str, str] | None = None,
     cfg=None,
     chat_fn=None,
     batch_size: int = _AI_BATCH_SIZE,
@@ -550,12 +635,14 @@ def judge_ai(
     - cfg：Config（用 cfg.text 文本模型；D21 任意品牌文本模型皆可，不写死 DeepSeek）。
     - chat_fn：可注入便于测（默认 llm.chat_text，签名 (cfg, prompt, system=, temperature=, timeout=)）；
       测试注入 mock 即不烧 token、不要 key。
+    - usability：name→usability（从 install_list 透传；dedup decisions 不带 usability）。
     - limit：只判前 N 条 new（成本控制，None=全部）。未判到的 new 由 merge_judgments 兜底「不值得装」。
     - on_batch：进度回调 (i, n_batches, batch_size, ok) 供 CLI 打印（D22 透明 + 用户在场可监控）。
     - 单批调用/解析失败 → 整批降级「不值得装」+ reason（防静默漏判，与 merge_judgments 同口径），
       绝不让单批错拖垮整次判断。
     """
     descriptions = descriptions or {}
+    usability = usability or {}
     news = [c for c in candidates if c.get("decision") == "new"]
     if limit is not None:
         news = news[:limit]
@@ -596,8 +683,11 @@ def judge_ai(
             else:
                 verdict = V_NOT_WORTH
                 reason = "模型未给出该候选判断"
+            # usability 从 install_list 透传的 map 取（dedup decision 不带 usability），
+            # 否则 MCP 候选一律误标 ready（如 github 需凭证被当 ready）
             judgments.append(Judgment(
-                name=name, decision="new", verdict=verdict, reason=reason, mode="ai"))
+                name=name, decision="new", verdict=verdict, reason=reason, mode="ai",
+                form=c.get("form", "Skill"), usability=usability.get(name, "ready")))
 
         if on_batch is not None:
             on_batch(i, n, len(batch), ok)

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -107,3 +108,32 @@ def load_config(path: Path | None = None) -> Config:
         vision=_provider("VISION"),
         env_path=path or env_path(),
     )
+
+
+# ---- MCP（模型上下文协议）安装相关配置 ----
+
+# Claude Code 全局配置文件：mcpServers 注册落点
+#   - user scope：顶层 mcpServers（全项目可见）
+#   - local scope：projects[cwd].mcpServers（仅当前目录）
+claude_json_path: Path = Path.home() / ".claude.json"
+
+# 默认注册 scope：user（全项目可见、无需逐仓审批；local 仅当前目录，project 需入仓 .mcp.json 审批）
+mcp_default_scope: str = "user"
+
+def claude_bin() -> str | None:
+    """返回可用的 claude 可执行文件路径，找不到返回 None。
+
+    探测顺序（通用，不写死本机路径）：
+      1. 环境变量 ``SKILLBREW_CLAUDE_BIN`` —— 部署方显式指定 bundled 二进制路径
+         （如 Coze 3.0 随 SDK 打包的 claude v2.1.156，支持 ``claude mcp add -s
+         user`` / ``get`` / ``list`` / ``remove`` 子命令；该 env 只存在本机、不进仓库）；
+      2. PATH 上的 ``claude``（shutil.which）—— 通用环境优先走这条；
+      3. 都没有 → None，install 退回原子 JSON 合并 fallback。
+    """
+    env_hint = os.environ.get("SKILLBREW_CLAUDE_BIN")
+    if env_hint and os.access(env_hint, os.X_OK):
+        return env_hint
+    found = shutil.which("claude")
+    if found:
+        return found
+    return None

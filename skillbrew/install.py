@@ -1,19 +1,38 @@
-"""install：安装 —— 照 dedup 判定的 new 技能，整目录从 GitHub raw 拷到本地 .claude/skills/，登记进台账。
+"""install：安装 —— 照 dedup 判定的 new 能力，按形态分发安装并登记台账。
 
-刹车（章程 D18/刹车设计）：install 默认 dry-run——只列要装什么、不下载、不写台账；
+形态分发（章程 D2/D20，产物形态由计划内容决定、不预设）：
+  - form=="Skill" → 整目录从 GitHub raw 拷到本地 .claude/skills/<name>/（须 SKILL.md）
+  - form=="MCP"   → 注册进 ~/.claude.json mcpServers（默认 user scope），CLI-first：
+                    优先 `claude mcp add -s user ...`（官方原子操作），无 binary 时
+                    fallback 原子 JSON 合并（.bak + mtime 守卫 + 写后 json.loads 校验 + 回滚）
+
+刹车（章程 D18/刹车设计）：install 默认 dry-run——只列要装什么、不下载、不注册、不写台账；
 带 --approve 才真落盘 + 写台账，保"你落盘就是什么"。
 
 装哪些：
-  - dedup 判 new 的 → 装（整目录拷：每个 skill = 其目录下全部文件）
+  - dedup 判 new 的 → 装（按 form 分发）
   - dedup 判 merge 的 → 不自动装（整并需人工确认，标出来留给后面）
   - dedup 判 skip 的 → 不装（已装/已整并）
   - new 里 category=deprecated 的 → 默认跳过（--include-deprecated 才装）
+  - needs_credentials 的 MCP（如 github 需 PAT）→ dry-run 高亮「需凭证」，
+    --approve 默认跳过真装（除非对应 credential_env 已在环境里配好），不替用户造凭证
+  - needs_config 的 MCP（如 filesystem 的 <DIRS>）→ --approve 把 <DIRS> 默认填
+    cwd+home 再注册（章程风险清单「默认填占位并高亮待改」）；仍解析不出的 <…> 占位 → 跳过
 
-纯 GitHub raw 下载（raw 不耗 API 限额）+ 标准库；不调 LLM、不耗 DeepSeek/Agnes 配额。
+unresolved（verify 透明降级，如 memos 无官方 MCP）→ 不在 items、不在 to_install，
+原样透传进报告标「待定夺」，install 不猜包装（D19/D22）。
+
+install 是 dedup-driven（照 dedup 的 new 装），不读 recommend.json——recommend 是
+判断步（值不值得装）出建议名单，install 只管"装哪些 new、按什么形态装"。挑着买
+（D20）由你在 recommend 步看到 verdict 后自行定夺（manual/ai 模式可覆写）。
+
+纯 GitHub raw 下载（raw 不耗 API 限额）+ 标准库 + claude CLI；不调 LLM、不耗配额。
 """
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -67,17 +86,278 @@ def _rel_within(skill_dir_path: str, file_path: str) -> Path:
     return p
 
 
+# ==================== 形态分发：Skill 整目录拷 ====================
+
+def _install_skill(conn, item: dict, decision: dict, target: Path,
+                   source_video: str, full_name: str,
+                   on_progress=None, i: int = 0, total: int = 1) -> dict:
+    """Skill 形态：整目录从 GitHub raw 拷到 target/<name>/，登记台账。返回 installed 条目。
+
+    逻辑与旧版一致（每个 skill = 其目录下全部文件，raw 下载，SKILL.md 抠 frontmatter），
+    仅抽出成函数 + form 取 item 真实形态（修旧版硬编码 form="Skill"）。
+    """
+    name = decision["name"]
+    if on_progress:
+        on_progress(item, i, total)
+    dest_dir = target / name
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    n_files = 0
+    display_name = name
+    for f in item.get("files", []):
+        rel = _rel_within(item["dir_path"], f["path"])
+        dest_file = dest_dir / rel
+        dest_file.parent.mkdir(parents=True, exist_ok=True)
+        data = _fetch_bytes(f["raw_url"])
+        dest_file.write_bytes(data)
+        n_files += 1
+        if rel.name == "SKILL.md":  # 顺手抠 frontmatter 拿规范名
+            try:
+                fm = parse_frontmatter(data.decode("utf-8", errors="replace"))
+                if fm.get("name"):
+                    display_name = fm["name"]
+            except Exception:  # noqa: BLE001  frontmatter 解析失败不阻塞
+                pass
+    registry.upsert_skill(
+        conn, name,
+        display_name=display_name,
+        category=item.get("category", decision.get("category", "")),
+        form=item.get("form", "Skill"),
+        source=full_name,
+        source_video=source_video,
+        install_path=str(dest_dir),
+        file_count=n_files,
+        status="active",
+        attribution=f"{full_name}（GitHub 开源）",
+        dedup_note="dedup 判定 new，整目录拷贝安装",
+        installed_at=_now_iso(),
+    )
+    return {"name": name, "display_name": display_name,
+            "form": "Skill", "file_count": n_files, "path": str(dest_dir)}
+
+
+# ==================== 形态分发：MCP 注册 ====================
+
+def _credentials_configured(item: dict) -> bool:
+    """needs_credentials 的 MCP 是否已在环境里配好凭证（不替用户造凭证）。
+
+    credential_env 形如 ["GITHUB_PERSONAL_ACCESS_TOKEN"]；全在 os.environ 里才算配好。
+    无 credential_env 或非 needs_credentials → 视为无需凭证（True，可装）。
+    """
+    cred = item.get("credential_env") or []
+    if not cred:
+        return True
+    return all(os.environ.get(k) for k in cred)
+
+
+def _resolve_args(mcp: dict) -> tuple[list[str], bool]:
+    """解析 args 里的 <DIRS> 占位符（needs_config），默认填 cwd+home。
+
+    返回 (resolved_args, substituted_dirs)。其它 <…> 占位符不在本函数替换
+    （由调用方 _has_unresolved_placeholder 兜底判跳过，避免注册坏服务器）。
+    """
+    args = [str(a) for a in (mcp.get("args") or [])]
+    default_dirs = f"{Path.cwd()} {Path.home()}"
+    sub = False
+    out: list[str] = []
+    for a in args:
+        low = a.lower()
+        if "<dirs>" in low:
+            a = a.replace("<DIRS>", default_dirs).replace("<dirs>", default_dirs)
+            sub = True
+        out.append(a)
+    return out, sub
+
+
+def _has_unresolved_placeholder(resolved_args: list[str]) -> bool:
+    """<DIRS> 已替换后，args 里若仍含 <…> 占位 → 不能装（needs_config 未解析），跳过。"""
+    return any("<" in a and ">" in a for a in resolved_args)
+
+
+def _inject_env(item: dict) -> dict:
+    """收集 credential_env / env_template 里 os.environ 真有的键值（空占位不注入）。"""
+    keys = list(item.get("credential_env") or []) + list((item.get("env_template") or {}).keys())
+    return {k: os.environ[k] for k in keys if os.environ.get(k)}
+
+
+def _mcp_server_config(item: dict, resolved_args: list[str]) -> dict:
+    """构造要注册的 MCP server 配置（与 ~/.claude.json mcpServers 条目同构）。
+
+    stdio：{command, args, env(仅注入已配置凭证)}；http/sse：{type, url, headers}。
+    """
+    mcp = item.get("mcp") or {}
+    transport = (mcp.get("transport") or "stdio").lower()
+    if transport in ("http", "sse"):
+        server = {"type": transport, "url": mcp.get("url", "")}
+        if mcp.get("headers"):
+            server["headers"] = mcp["headers"]
+        return server
+    server = {"command": mcp.get("command", "")}
+    if resolved_args:
+        server["args"] = list(resolved_args)
+    env_inj = _inject_env(item)
+    if env_inj:
+        server["env"] = env_inj
+    return server
+
+
+def _install_mcp_cli(bin_path: str, name: str, item: dict,
+                     scope: str, transport: str, resolved_args: list[str]) -> dict:
+    """CLI-first：`claude mcp add` 注册。stdio 用 `--` 分隔 command/args，http/sse 用 -t。
+
+    校验 returncode，再 `claude mcp get <name>` 确认注册成功。返回 registered_via/install_path。
+    注：`claude mcp add` 默认 scope=local，必须显式 -s <scope>（本环境 mcp_default_scope=user）。
+    """
+    mcp = item.get("mcp") or {}
+    cmd = [bin_path, "mcp", "add"]
+    if transport in ("http", "sse"):
+        cmd += ["-s", scope, "-t", transport, name, mcp.get("url", "")]
+        for h in mcp.get("headers") or []:
+            cmd += ["-H", h]
+    else:  # stdio：name 在前，-e 注入已配凭证，-- 后接 command + args
+        cmd += [name, "-s", scope]
+        for k, v in _inject_env(item).items():
+            cmd += ["-e", f"{k}={v}"]
+        cmd.append("--")
+        if mcp.get("command"):
+            cmd.append(mcp["command"])
+        cmd += list(resolved_args)
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=_TIMEOUT * 2)
+    if proc.returncode != 0:
+        raise RuntimeError(f"claude mcp add 失败 {name}: {(proc.stderr or proc.stdout).strip()}")
+    # 确认：claude mcp get <name> 能取到（returncode 0 或名字出现在输出里都算成功）
+    getp = subprocess.run([bin_path, "mcp", "get", name],
+                          capture_output=True, text=True, timeout=_TIMEOUT)
+    if getp.returncode != 0 and name not in (getp.stdout + getp.stderr):
+        raise RuntimeError(f"claude mcp add 后 get 不到 {name}: {(getp.stderr or getp.stdout).strip()}")
+    return {"registered_via": "cli",
+            "install_path": f"~/.claude.json:mcpServers/{name} (scope={scope})"}
+
+
+def _install_mcp_json_merge(name: str, item: dict, scope: str,
+                            transport: str, resolved_args: list[str]) -> dict:
+    """无 claude binary 时 fallback：原子合并进 ~/.claude.json（user/local）或 ./.mcp.json（project）。
+
+    读 → 备份 .bak → mtime 守卫（读后写前对比，被改则重读重放本条）→ 合并 →
+    写后 json.loads 校验可解析 → 失败回滚 .bak。user scope 写顶层 mcpServers。
+    """
+    from . import config
+    server = _mcp_server_config(item, resolved_args)
+
+    if scope == "project":  # project scope 写独立文件 ./.mcp.json
+        pm = Path.cwd() / ".mcp.json"
+        pdata: dict = {}
+        if pm.exists():
+            try:
+                pdata = json.loads(pm.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001  损坏从空重建，.bak 不适用于独立文件
+                pdata = {}
+        pdata.setdefault("mcpServers", {})[name] = server
+        pm.write_text(json.dumps(pdata, ensure_ascii=False, indent=2), encoding="utf-8")
+        return {"registered_via": "json-merge",
+                "install_path": f"{pm}:mcpServers/{name} (scope=project)"}
+
+    cj = config.claude_json_path
+    bak = cj.with_suffix(cj.suffix + ".bak")
+
+    def _read() -> dict:
+        if not cj.exists():
+            return {}
+        try:
+            return json.loads(cj.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001  ~/.claude.json 损坏：从空重建（.bak 兜底保其它配置）
+            return {}
+
+    data = _read()
+    mtime0 = cj.stat().st_mtime if cj.exists() else None
+    if cj.exists():
+        bak.write_bytes(cj.read_bytes())  # 备份
+
+    if scope == "user":
+        data.setdefault("mcpServers", {})[name] = server
+    elif scope == "local":
+        cwd = str(Path.cwd())
+        data.setdefault("projects", {}).setdefault(cwd, {}).setdefault("mcpServers", {})[name] = server
+    else:
+        raise RuntimeError(f"未知 MCP scope: {scope}")
+
+    # mtime 守卫：写前再 stat，被外部改过则重读重放本条（防覆盖并发改动）
+    if cj.exists() and cj.stat().st_mtime != mtime0:
+        fresh = _read()
+        if scope == "user":
+            fresh.setdefault("mcpServers", {})[name] = server
+        else:  # local
+            fresh.setdefault("projects", {}).setdefault(str(Path.cwd()), {}).setdefault("mcpServers", {})[name] = server
+        data = fresh
+
+    cj.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:  # 写后校验可解析；失败回滚 .bak
+        json.loads(cj.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        if bak.exists():
+            cj.write_bytes(bak.read_bytes())
+        raise RuntimeError(f"~/.claude.json 写后校验失败，已回滚 .bak：{name}")
+    return {"registered_via": "json-merge",
+            "install_path": f"~/.claude.json:mcpServers/{name} (scope={scope})"}
+
+
+def _install_mcp(conn, item: dict, decision: dict,
+                 source_video: str, full_name: str,
+                 resolved_args: list[str], substituted_dirs: bool,
+                 on_progress=None, i: int = 0, total: int = 1) -> dict:
+    """注册一个 MCP 服务器 + 登记台账。CLI-first，无 binary 走原子 JSON 合并。
+
+    返回 installed 条目 {name, form, scope, transport, registered_via, usability, path, dirs_filled}。
+    """
+    from . import config
+    name = decision["name"]
+    if on_progress:
+        on_progress(item, i, total)
+    mcp = item.get("mcp") or {}
+    scope = mcp.get("scope") or config.mcp_default_scope
+    transport = (mcp.get("transport") or "stdio").lower()
+
+    bin_path = config.claude_bin()
+    if bin_path:
+        via = _install_mcp_cli(bin_path, name, item, scope, transport, resolved_args)
+    else:
+        via = _install_mcp_json_merge(name, item, scope, transport, resolved_args)
+
+    usability = item.get("usability", "ready")
+    dedup_note = f"dedup 判定 new，{via['registered_via']} 注册（scope={scope}）"
+    if substituted_dirs:
+        dedup_note += "；<DIRS> 已默认填 cwd+home，建议按需收窄"
+    registry.upsert_skill(
+        conn, name,
+        display_name=item.get("capability_name") or name,
+        category="",
+        form="MCP",
+        source=item.get("repo") or full_name,
+        source_video=source_video,
+        install_path=via["install_path"],
+        file_count=0,
+        status="active",
+        attribution=f"{item.get('repo') or full_name}（MCP 服务器）",
+        dedup_note=dedup_note,
+        installed_at=_now_iso(),
+    )
+    return {"name": name, "form": "MCP", "scope": scope, "transport": transport,
+            "registered_via": via["registered_via"], "usability": usability,
+            "dirs_filled": substituted_dirs, "path": via["install_path"]}
+
+
+# ==================== 主流程 ====================
+
 def install(
     source_dir: Path, *, target_dir: Path | str | None = None,
     db_path: Path | str | None = None, approve: bool = False,
     include_deprecated: bool = False, on_progress=None,
 ) -> dict:
-    """对一个源目录跑安装：读 install_list.json + dedup.json → 挑 new 整目录拷 → 登记台账。
+    """对一个源目录跑安装：读 install_list.json + dedup.json → 挑 new 按形态分发 → 登记台账。
 
-    approve=False（默认）= dry-run，只返回计划（to_install/skipped_*），不下载不写台账。
-    approve=True = 真下载每个文件到 target_dir/<name>/ + upsert 台账 + 记安装会话。
-    返回报告 dict。纯 GitHub raw + 标准库，不调 LLM。
-    target_dir 默认 ~/.claude/skills。
+    approve=False（默认）= dry-run，只返回计划（to_install/items_detail/skipped_*/unresolved），
+    不下载、不注册、不写台账。approve=True = 真装（Skill 整目录拷 / MCP 注册）+ upsert 台账 + 记会话。
+    返回报告 dict。纯 GitHub raw + 标准库 + claude CLI，不调 LLM。
+    target_dir 仅对 Skill 形态有意义（默认 ~/.claude/skills）；MCP 注册到 ~/.claude.json。
     """
     source_dir = Path(source_dir)
     il_path = source_dir / "install_list.json"
@@ -93,7 +373,9 @@ def install(
     full_name = repo.get("full_name", "")
     source_video = install_list.get("source_video", source_dir.name)
 
-    by_name = {s["name"]: s for s in install_list.get("skills", [])}  # 回查 files/raw_url/dir_path
+    # items 为规范键，skills 为兼容别名（同数组引用）；旧 artifact 只有 skills
+    items = install_list.get("items") or install_list.get("skills", [])
+    by_name = {s["name"]: s for s in items if s.get("name")}  # 回查 files/raw_url/dir_path/mcp
 
     to_install: list[dict] = []
     skipped_merge: list[dict] = []
@@ -115,6 +397,27 @@ def install(
     target = Path(target_dir) if target_dir else (Path.home() / ".claude" / "skills")
     before = dedup_report.get("baseline", {}).get("counts", {}).get("distinct", 0)
 
+    # dry-run 计划的 per-item 明细（形态/usability/凭证，反黑箱 D22）
+    items_detail: list[dict] = []
+    for d in to_install:
+        name = d["name"]
+        item = by_name.get(name, {})
+        form = d.get("form") or item.get("form") or "Skill"
+        usability = item.get("usability", "ready")
+        entry: dict = {"name": name, "form": form, "usability": usability}
+        if form == "MCP":
+            mcp = item.get("mcp") or {}
+            entry["scope"] = mcp.get("scope", "user")
+            entry["transport"] = mcp.get("transport", "stdio")
+            entry["command"] = mcp.get("command", "")
+            entry["args"] = list(mcp.get("args") or [])  # 原样占位（<DIRS> 等），透明展示待改
+            entry["credential_env"] = list(item.get("credential_env") or [])
+            entry["needs_credentials"] = (usability == "needs_credentials")
+        else:
+            entry["target"] = str(target / name)
+            entry["file_count"] = len(item.get("files", []))
+        items_detail.append(entry)
+
     plan = {
         "source_video": source_video,
         "verified_repo": full_name,
@@ -122,63 +425,57 @@ def install(
         "target_dir": str(target),
         "before": before,
         "to_install": [d["name"] for d in to_install],
+        "items_detail": items_detail,
         "skipped_merge": [d["name"] for d in skipped_merge],
         "skipped_deprecated": [d["name"] for d in skipped_deprecated],
         "skipped_already": [d["name"] for d in skipped_already],
+        "unresolved": install_list.get("unresolved") or dedup_report.get("unresolved", []),
     }
 
     if not approve:
-        plan["note"] = "dry-run：未下载、未写台账。加 --approve 才真装。"
+        plan["note"] = "dry-run：未下载、未注册、未写台账。加 --approve 才真装。"
         return plan
 
-    # ---- 真装：整目录拷 + 登记 ----
-    target.mkdir(parents=True, exist_ok=True)
+    # ---- 真装：按形态分发 + 登记 ----
+    if any((d.get("form") or by_name.get(d["name"], {}).get("form")) == "Skill" for d in to_install):
+        target.mkdir(parents=True, exist_ok=True)  # 仅 Skill 形态需要目标目录
     # db_path 默认 None → 用 registry 自己的 DB_PATH（别把 None 传进去盖掉默认值）
     conn = registry.connect(db_path if db_path is not None else registry.DB_PATH)
     installed: list[dict] = []
+    skipped_credentials: list[dict] = []
+    skipped_config: list[dict] = []
     try:
         total = len(to_install)
         for i, d in enumerate(to_install):
             name = d["name"]
-            s = by_name[name]
-            dest_dir = target / name
-            if on_progress:
-                on_progress(s, i, total)
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            n_files = 0
-            display_name = name
-            for f in s.get("files", []):
-                rel = _rel_within(s["dir_path"], f["path"])
-                dest_file = dest_dir / rel
-                dest_file.parent.mkdir(parents=True, exist_ok=True)
-                data = _fetch_bytes(f["raw_url"])
-                dest_file.write_bytes(data)
-                n_files += 1
-                if rel.name == "SKILL.md":  # 顺手抠 frontmatter 拿规范名
-                    try:
-                        fm = parse_frontmatter(data.decode("utf-8", errors="replace"))
-                        if fm.get("name"):
-                            display_name = fm["name"]
-                    except Exception:  # noqa: BLE001  frontmatter 解析失败不阻塞
-                        pass
-            registry.upsert_skill(
-                conn, name,
-                display_name=display_name,
-                category=s.get("category", ""),
-                form="Skill",
-                source=full_name,
-                source_video=source_video,
-                install_path=str(dest_dir),
-                file_count=n_files,
-                status="active",
-                attribution=f"{full_name}（GitHub 开源）",
-                dedup_note="dedup 判定 new，整目录拷贝安装",
-                installed_at=_now_iso(),
-            )
-            installed.append({
-                "name": name, "display_name": display_name,
-                "file_count": n_files, "path": str(dest_dir),
-            })
+            item = by_name.get(name, {})
+            form = d.get("form") or item.get("form") or "Skill"
+            if form == "MCP":
+                usability = item.get("usability", "ready")
+                # needs_credentials 且凭证未配 → 跳过真装，不替用户造凭证（D22）
+                if usability == "needs_credentials" and not _credentials_configured(item):
+                    skipped_credentials.append({
+                        "name": name, "form": "MCP",
+                        "credential_env": list(item.get("credential_env") or []),
+                        "reason": "需凭证且环境未配置，跳过真装",
+                    })
+                    continue
+                resolved_args, sub_dirs = _resolve_args(item.get("mcp") or {})
+                # needs_config 且占位仍未解析 → 跳过，避免注册坏服务器
+                if _has_unresolved_placeholder(resolved_args):
+                    skipped_config.append({
+                        "name": name, "form": "MCP",
+                        "reason": "args 仍含未解析占位符 <…>，待配置后再装",
+                    })
+                    continue
+                installed.append(_install_mcp(conn, item, d, source_video, full_name,
+                                              resolved_args, sub_dirs,
+                                              on_progress=on_progress, i=i, total=total))
+            else:
+                installed.append(
+                    _install_skill(conn, item, d, target, source_video, full_name,
+                                   on_progress=on_progress, i=i, total=total)
+                )
 
         after = before + len(installed)
         registry.record_session(
@@ -187,22 +484,80 @@ def install(
             source_video=source_video,
             authorization_choice="install --approve",
             skills_before=before,
-            skills_added=len(installed),
+            skills_added=len(installed),  # 计所有已装能力（Skill + MCP，零 migration，列名语义泛化为「能力」）
             skills_merged=0,
             skills_after=after,
             installed_at=_now_iso(),
             notes=(
-                f"装 {len(installed)} 个新 skill；跳过 merge {len(skipped_merge)}/"
-                f"deprecated {len(skipped_deprecated)}/已装 {len(skipped_already)}"
+                f"装 {len(installed)} 个新能力；跳过 merge {len(skipped_merge)}/"
+                f"deprecated {len(skipped_deprecated)}/已装 {len(skipped_already)}/"
+                f"需凭证 {len(skipped_credentials)}/需配置 {len(skipped_config)}"
             ),
         )
     finally:
         conn.close()
 
     plan["installed"] = installed
+    plan["skipped_credentials"] = skipped_credentials
+    plan["skipped_config"] = skipped_config
     plan["after"] = after
-    plan["note"] = f"已落盘 {len(installed)} 个 skill 到 {target}，并登记进台账。"
+    forms: dict[str, int] = {}
+    for it in installed:
+        f = it.get("form", "Skill")
+        forms[f] = forms.get(f, 0) + 1
+    forms_str = " ".join(f"{k}={v}" for k, v in forms.items()) or "—"
+    note = f"已落盘 {len(installed)} 个能力（{forms_str}），并登记进台账。"
+    if skipped_credentials:
+        note += f" 需凭证跳过 {len(skipped_credentials)} 个，待配 credential_env 后重跑。"
+    if skipped_config:
+        note += f" 需配置跳过 {len(skipped_config)} 个，待替换占位符后重跑。"
+    plan["note"] = note
     return plan
+
+
+def format_plan_text(r: dict) -> str:
+    """把 install 报告格式化成人读多行文本（dry-run 与真装通用，形态分发文案）。
+
+    cli.cmd_install 与本模块 _main 共用，保两入口输出一致。
+    """
+    lines = [
+        f"源视频：{r['source_video']}  仓库：{r['verified_repo'] or '(未知)'}",
+        f"目标/注册：{r['target_dir']}  安装前 distinct：{r['before']}",
+        f"将装 new：{len(r['to_install'])} 个",
+    ]
+    for it in r.get("items_detail") or []:
+        form = it.get("form", "Skill")
+        tag = ""
+        if it.get("needs_credentials"):
+            tag = "  ⚠️ 需凭证（默认跳过真装，待配 credential_env）"
+        elif it.get("usability") and it["usability"] != "ready":
+            tag = f"  〔装完前必做：{it['usability']}〕"
+        if form == "MCP":
+            args = " ".join(it.get("args", []))
+            head = (f"  - [{form}] {it['name']}  scope={it.get('scope','user')}  "
+                    f"{it.get('command','')} {args}".rstrip())
+            lines.append(head + tag)
+        else:
+            lines.append(
+                f"  - [{form}] {it['name']}  → {it.get('target','')}"
+                f"（{it.get('file_count',0)} 文件）{tag}".rstrip()
+            )
+    if r.get("skipped_merge"):
+        lines.append(f"跳过 merge（人工确认）：{len(r['skipped_merge'])} 个 → {r['skipped_merge']}")
+    if r.get("skipped_deprecated"):
+        lines.append(f"跳过 deprecated：{len(r['skipped_deprecated'])} 个 → {r['skipped_deprecated']}（--include-deprecated 可装）")
+    if r.get("skipped_already"):
+        lines.append(f"跳过已装/已整并：{len(r['skipped_already'])} 个")
+    sc = r.get("skipped_credentials") or []
+    if sc:
+        lines.append(f"跳过需凭证（待配 credential_env）：{[s['name'] for s in sc]}")
+    scfg = r.get("skipped_config") or []
+    if scfg:
+        lines.append(f"跳过需配置（占位符未解析）：{[s['name'] for s in scfg]}")
+    if r.get("unresolved"):
+        names = [u.get("name") for u in r["unresolved"]]
+        lines.append(f"unresolved（catalog miss，待定夺，不自动包装）：{names}")
+    return "\n".join(lines)
 
 
 # ---- 直接运行：python -m skillbrew.install <源目录> [--approve] ----
@@ -220,9 +575,23 @@ def _main() -> int:
         target = sys.argv[sys.argv.index("--target-dir") + 1]
     print(f"[安装] {src}  {'真装' if approve else 'dry-run'}")
     r = install(src, target_dir=target, approve=approve, include_deprecated=include_dep)
-    print(f"[OK] 装 {len(r['to_install'])} 个：{r['to_install']}")
-    if not approve:
-        print("     dry-run，未落盘。加 --approve 真装。")
+    print("\n" + "=" * 60)
+    print(format_plan_text(r))
+    print("=" * 60)
+    if approve:
+        installed = r.get("installed", [])
+        print(f"\n✅ 已落盘 {len(installed)} 个能力，安装后 distinct：{r.get('after')}")
+        for s in installed:
+            if s.get("form") == "MCP":
+                dirs = "  〔<DIRS> 已填默认目录，建议收窄〕" if s.get("dirs_filled") else ""
+                print(f"  - {s['name']}（{s.get('registered_via','')}，scope={s.get('scope','')}，"
+                      f"usability={s.get('usability','')}）→ {s.get('path','')}{dirs}")
+            else:
+                print(f"  - {s['name']}（{s.get('file_count',0)} 文件）→ {s.get('path','')}")
+        print(f"   {r.get('note', '')}")
+    else:
+        print("\n   " + r.get("note", ""))
+        print("   加 --approve 才真落盘 + 写台账。")
     return 0
 
 
