@@ -156,15 +156,22 @@ def _resolve_args(mcp: dict) -> tuple[list[str], bool]:
     （由调用方 _has_unresolved_placeholder 兜底判跳过，避免注册坏服务器）。
     """
     args = [str(a) for a in (mcp.get("args") or [])]
-    default_dirs = f"{Path.cwd()} {Path.home()}"
+    default_dirs = [str(Path.cwd()), str(Path.home())]
     sub = False
     out: list[str] = []
     for a in args:
-        low = a.lower()
-        if "<dirs>" in low:
-            a = a.replace("<DIRS>", default_dirs).replace("<dirs>", default_dirs)
+        if a.strip().lower() == "<dirs>":
+            # 整个 arg 就是 <DIRS> → 展开成多个独立目录参数
+            # （filesystem server 要求每个允许目录各占一个 argv，连成带空格的单串会注册成坏服务器）
+            out.extend(default_dirs)
             sub = True
-        out.append(a)
+        elif "<dirs>" in a.lower():
+            # <DIRS> 仅作为子串嵌在更大字符串里 → 退化为空格连接替换
+            a = a.replace("<DIRS>", " ".join(default_dirs)).replace("<dirs>", " ".join(default_dirs))
+            sub = True
+            out.append(a)
+        else:
+            out.append(a)
     return out, sub
 
 
