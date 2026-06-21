@@ -35,7 +35,7 @@ import json
 import re
 from pathlib import Path
 
-from . import registry
+from . import config, registry
 from .verify import parse_frontmatter, parse_github_urls  # 复用 frontmatter 解析 + GitHub URL 解析
 
 SKILL_MD = "SKILL.md"
@@ -134,7 +134,7 @@ def scan_local_mcps(claude_json_path: Path | str | None = None,
     out: list[dict] = []
     seen: set[tuple[str, str]] = set()
 
-    cj_path = Path(claude_json_path) if claude_json_path else config.claude_json_path
+    cj_path = Path(claude_json_path) if claude_json_path else config.claude_json_path()
     if cj_path.exists():
         try:
             data = json.loads(cj_path.read_text(encoding="utf-8"))
@@ -475,7 +475,7 @@ def dedup(source_dir: Path, *, skill_dirs: list[Path] | None = None,
     install_list = json.loads(il_path.read_text(encoding="utf-8"))
 
     if skill_dirs is None:
-        skill_dirs = [Path.home() / ".claude" / "skills"]
+        skill_dirs = [config.skills_dir()]
     skill_dirs = [Path(d) for d in skill_dirs]
 
     if on_progress:

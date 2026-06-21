@@ -79,20 +79,20 @@ def test_section_real_install():
 
 
 def test_section_dry_run():
-    """⑥ dry-run（sessions 空）→ 优雅降级，不空列候选表格（与 G3 同口径）。"""
-    g = _fake_g(installed=["a", "b", "c"], sessions=[])  # 832 候选也不该铺表
+    """⑥ dry-run（sessions 空）→ D22 反盲盒也列出候选表格（装前看清要配什么）。"""
+    g = _fake_g(installed=["a", "b", "c"], sessions=[])
     out = "\n".join(R._d22_invoke_section(g, heading="## 8. 怎么调用\n"))
-    assert "未落盘" in out and "暂无可调用项" in out, f"应有降级措辞: {out}"
-    assert "| # | @名" not in out, "dry-run 不该铺表格"
-    assert "recommend" in out and "D19" in out, "应提示先跑 recommend 挑子集"
-    print("  [6] dry-run 未落盘→降级：✓ 不空列候选、提示先 recommend")
+    assert "未落盘" in out, f"应有降级措辞: {out}"
+    assert "| # | @名 | 形态" in out, "dry-run 也应铺候选表格（D22 反盲盒）"
+    assert "`a`" in out and "`b`" in out and "`c`" in out, "候选应全部列出"
+    print("  [6] dry-run 未落盘→D22 反盲盒列候选：✓ 铺表 + 未落盘提示")
 
 
 def test_section_empty_install():
     """⑦ 真装但本批无 new 能力 → 「无可调用项」，不铺空表。"""
     g = _fake_g(installed=[], sessions=[{"id": 1}])  # 装过但本批没新的
     out = "\n".join(R._d22_invoke_section(g, heading="## 8. 怎么调用\n"))
-    assert "无 new 能力落地" in out, f"应说无可调用项: {out}"
+    assert "无可调用项" in out, f"应说无可调用项: {out}"
     assert "| # | @名" not in out
     print("  [7] 真装但本批空→无可调用项：✓ 不铺空表")
 

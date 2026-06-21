@@ -271,7 +271,7 @@ def _install_mcp_json_merge(name: str, item: dict, scope: str,
         return {"registered_via": "json-merge",
                 "install_path": f"{pm}:mcpServers/{name} (scope=project)"}
 
-    cj = config.claude_json_path
+    cj = config.claude_json_path()
     bak = cj.with_suffix(cj.suffix + ".bak")
 
     def _read() -> dict:
@@ -578,7 +578,7 @@ def install(
             else:
                 to_install.append(d)
 
-    target = Path(target_dir) if target_dir else (Path.home() / ".claude" / "skills")
+    target = Path(target_dir) if target_dir else config.skills_dir()
     before = dedup_report.get("baseline", {}).get("counts", {}).get("distinct", 0)
 
     # dry-run 计划的 per-item 明细（形态/usability/凭证，反黑箱 D22）

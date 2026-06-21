@@ -111,15 +111,69 @@ def load_config(path: Path | None = None) -> Config:
     )
 
 
-# ---- MCP（模型上下文协议）安装相关配置 ----
-
-# Claude Code 全局配置文件：mcpServers 注册落点
-#   - user scope：顶层 mcpServers（全项目可见）
-#   - local scope：projects[cwd].mcpServers（仅当前目录）
-claude_json_path: Path = Path.home() / ".claude.json"
+# ---- 运行时探测（Claude Code / Codex / 其它 agent CLI）----
 
 # 默认注册 scope：user（全项目可见、无需逐仓审批；local 仅当前目录，project 需入仓 .mcp.json 审批）
 mcp_default_scope: str = "user"
+
+
+def detect_runtime() -> str:
+    """探测当前 agent 运行时，返回 'claude' | 'codex'。
+
+    探测顺序：
+      1. 环境变量 ``SKILLBREW_RUNTIME``（部署方显式指定，不进仓库）；
+      2. 环境变量 ``CODEX_HOME`` 存在，或 ``~/.codex`` 目录存在 → 'codex'；
+      3. 默认返回 'claude'。
+    """
+    env_hint = (os.environ.get("SKILLBREW_RUNTIME") or "").strip().lower()
+    if env_hint in ("claude", "codex"):
+        return env_hint
+    if os.environ.get("CODEX_HOME"):
+        return "codex"
+    if (Path.home() / ".codex").exists():
+        return "codex"
+    return "claude"
+
+
+# ---- MCP（模型上下文协议）安装相关配置 ----
+
+def claude_json_path() -> Path:
+    """返回当前运行时的 MCP 配置文件路径。
+
+    优先级：
+      1. 环境变量 ``SKILLBREW_CLAUDE_JSON``（部署方显式指定，不进仓库）；
+      2. 运行时感知默认：
+         - Claude Code → ``~/.claude.json``
+         - Codex       → ``~/.codex/config.toml``
+
+    注意：Codex 使用 TOML 格式，当前版本仅实现 Claude 运行时的 JSON 读写；
+    Codex 下会返回正确的 toml 路径，但涉及 JSON 合并的调用方应安全退空（不崩）。
+    """
+    env_hint = os.environ.get("SKILLBREW_CLAUDE_JSON")
+    if env_hint:
+        return Path(env_hint)
+    if detect_runtime() == "codex":
+        return Path.home() / ".codex" / "config.toml"
+    return Path.home() / ".claude.json"
+
+
+def skills_dir() -> Path:
+    """返回 Skill 落地的用户级根目录。
+
+    优先级：
+      1. 环境变量 ``SKILLBREW_SKILLS_DIR``（部署方显式指定，不进仓库）；
+      2. 运行时感知默认：
+         - Claude Code → ``~/.claude/skills``
+         - Codex       → ``~/.codex/skills``
+    """
+    env_hint = os.environ.get("SKILLBREW_SKILLS_DIR")
+    if env_hint:
+        return Path(env_hint)
+    runtime = detect_runtime()
+    if runtime == "codex":
+        return Path.home() / ".codex" / "skills"
+    return Path.home() / ".claude" / "skills"
+
 
 def claude_bin() -> str | None:
     """返回可用的 claude 可执行文件路径，找不到返回 None。
@@ -146,10 +200,20 @@ def claude_bin() -> str | None:
 # 开源项目统一放这里，便于去重扫描与卸载回滚）。可用环境变量 SKILLBREW_CLONES_DIR
 # 覆盖（部署方显式指定，如指向更大的工作盘；该 env 只存在本机、不进仓库）。
 def repo_clones_dir() -> Path:
-    """返回克隆即用仓库的落地根目录。默认 ~/.claude/clones/，可被 SKILLBREW_CLONES_DIR 覆盖。"""
+    """返回克隆即用仓库的落地根目录。
+
+    优先级：
+      1. 环境变量 ``SKILLBREW_CLONES_DIR``（部署方显式指定，不进仓库）；
+      2. 运行时感知默认：
+         - Claude Code → ``~/.claude/clones``
+         - Codex       → ``~/.codex/clones``
+    """
     env_hint = os.environ.get("SKILLBREW_CLONES_DIR")
     if env_hint:
         return Path(env_hint)
+    runtime = detect_runtime()
+    if runtime == "codex":
+        return Path.home() / ".codex" / "clones"
     return Path.home() / ".claude" / "clones"
 
 

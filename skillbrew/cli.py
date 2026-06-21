@@ -22,6 +22,7 @@ import zlib
 from pathlib import Path
 
 from . import __version__
+from . import config
 from . import llm
 from . import notify
 from .config import Config, ensure_utf8_stdout, load_config
@@ -388,9 +389,9 @@ def cmd_dedup(args: argparse.Namespace) -> int:
         print(f"[ERR] {src} 没有 install_list.json（先跑 verify）")
         return 1
 
-    # D18：扫本地优先 —— 默认含用户级 ~/.claude/skills，自动检测当前工作目录的 .claude/skills/
-    skill_dirs = [Path.home() / ".claude" / "skills"]
-    # 自动检测当前工作目录及其父目录的 .claude/skills/（项目级 skill）
+    # D18：扫本地优先 —— 默认含用户级 skill 目录，自动检测当前工作目录的 .claude/skills/
+    skill_dirs = [config.skills_dir()]
+    # 自动检测当前工作目录及其父目录的 .claude/skills/（项目级 skill；跨运行时共享约定，保留）
     for parent in [Path.cwd()] + list(Path.cwd().parents):
         proj_skills = parent / ".claude" / "skills"
         if proj_skills.exists() and proj_skills not in skill_dirs:
@@ -466,8 +467,8 @@ def cmd_recommend(args: argparse.Namespace) -> int:
     usability_map = rec.build_usability(ilist)
 
     # ---- 本机能力画像（D18 动态基准，复用 dedup 扫描口径）----
-    skill_dirs = [Path.home() / ".claude" / "skills"]
-    # 自动检测当前工作目录及其父目录的 .claude/skills/（项目级 skill）
+    skill_dirs = [config.skills_dir()]
+    # 自动检测当前工作目录及其父目录的 .claude/skills/（项目级 skill；跨运行时共享约定，保留）
     for parent in [Path.cwd()] + list(Path.cwd().parents):
         proj_skills = parent / ".claude" / "skills"
         if proj_skills.exists() and proj_skills not in skill_dirs:
@@ -524,7 +525,7 @@ def cmd_recommend(args: argparse.Namespace) -> int:
 
 
 def cmd_install(args: argparse.Namespace) -> int:
-    """安装：照 dedup 判定的 new skill，整目录从 GitHub raw 拷到本地 .claude/skills/，登记台账。"""
+    """安装：照 dedup 判定的 new skill，整目录拷到运行时默认 Skill 目录，登记台账。"""
     from . import install as install_mod
 
     cfg = load_config()  # 校验配置 + 路径解析一致（install 不用 LLM，纯 GitHub raw）
@@ -666,7 +667,7 @@ def cmd_record(args: argparse.Namespace) -> int:
     skill_dirs = None
     if args.skills_dir:
         dd = json.loads((src / "dedup.json").read_text(encoding="utf-8"))
-        base = dd.get("baseline", {}).get("skill_dirs", []) or [str(Path.home() / ".claude" / "skills")]
+        base = dd.get("baseline", {}).get("skill_dirs", []) or [str(config.skills_dir())]
         skill_dirs = [Path(d) for d in base] + [Path(d) for d in args.skills_dir]
 
     print(f"[记录+看板] {src}")
@@ -723,6 +724,18 @@ def main(argv: list[str] | None = None) -> int:
         description="AI 能力包管理器：素材 → 消化 → 计划 → 授权安装 → 能力台账",
     )
     parser.add_argument("--version", action="version", version=f"skillbrew {__version__}")
+    parser.add_argument(
+        "--runtime", choices=["claude", "codex"], default=None,
+        help="显式指定 agent 运行时（默认自动探测：CODEX_HOME 或 ~/.codex 存在则 codex，否则 claude）",
+    )
+    parser.add_argument(
+        "--clones-dir", default=None, metavar="DIR",
+        help="覆盖默认 clone 落地目录（env SKILLBREW_CLONES_DIR 优先级更高）",
+    )
+    parser.add_argument(
+        "--mcp-json", default=None, metavar="PATH",
+        help="覆盖默认 MCP 配置文件路径（env SKILLBREW_CLAUDE_JSON 优先级更高）",
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_doc = sub.add_parser("doctor", help="自检：配置 + 文本/视觉连通性")
@@ -771,7 +784,7 @@ def main(argv: list[str] | None = None) -> int:
     p_ded.add_argument("source", help="源目录 或 B站URL/BV号")
     p_ded.add_argument(
         "--skills-dir", action="append", default=None, metavar="DIR",
-        help="追加要扫描的 .claude/skills 目录（可重复；默认已含 ~/.claude/skills）",
+        help="追加要扫描的 Skill 目录（可重复；默认已含运行时默认 Skill 目录）",
     )
     p_ded.set_defaults(func=cmd_dedup)
 
@@ -782,7 +795,7 @@ def main(argv: list[str] | None = None) -> int:
     p_rec_judge.add_argument("source", help="源目录 或 B站URL/BV号")
     p_rec_judge.add_argument(
         "--skills-dir", action="append", default=None, metavar="DIR",
-        help="追加扫描目录（默认已含 ~/.claude/skills，与去重同口径）",
+        help="追加扫描目录（默认已含运行时默认 Skill 目录，与去重同口径）",
     )
     p_rec_judge.add_argument(
         "--mode", choices=["keyword", "manual", "ai"], default="keyword",
@@ -799,14 +812,14 @@ def main(argv: list[str] | None = None) -> int:
     p_rec_judge.set_defaults(func=cmd_recommend)
 
     p_inst = sub.add_parser(
-        "install", help="安装：照 dedup 判定的 new skill，整目录拷到本地 .claude/skills/ 并登记台账",
+        "install", help="安装：照 dedup 判定的 new skill，整目录拷到运行时默认 Skill 目录并登记台账",
     )
     p_inst.add_argument("source", help="源目录 或 B站URL/BV号")
     p_inst.add_argument("--approve", action="store_true", help="真落盘 + 写台账（默认 dry-run，只列计划）")
     p_inst.add_argument(
         "--include-deprecated", action="store_true", help="连 deprecated skill 一起装（默认跳过）",
     )
-    p_inst.add_argument("--target-dir", default=None, help="安装目标目录（默认 ~/.claude/skills）")
+    p_inst.add_argument("--target-dir", default=None, help="安装目标目录（默认运行时默认 Skill 目录）")
     p_inst.set_defaults(func=cmd_install)
 
     p_rec = sub.add_parser(
@@ -821,6 +834,16 @@ def main(argv: list[str] | None = None) -> int:
     p_rec.set_defaults(func=cmd_record)
 
     args = parser.parse_args(argv)
+
+    # CLI 全局标志透传为环境变量，确保 config.detect_runtime()/skills_dir()/claude_json_path()
+    # /repo_clones_dir() 在本进程内即时生效（env 优先级高于运行时默认）。
+    if args.runtime:
+        os.environ.setdefault("SKILLBREW_RUNTIME", args.runtime)
+    if args.clones_dir:
+        os.environ.setdefault("SKILLBREW_CLONES_DIR", args.clones_dir)
+    if args.mcp_json:
+        os.environ.setdefault("SKILLBREW_CLAUDE_JSON", args.mcp_json)
+
     return args.func(args)
 
 

@@ -144,6 +144,42 @@ pip install -e .
 
 依赖：`openai`（必装）。视频获取 / ASR 走可选依赖 `pip install -e ".[media]"`（yt-dlp + faster-whisper，较大，按需装）。
 
+---
+
+## 运行环境中立（Claude Code / Codex CLI 双跑）
+
+skillbrew 默认按所在运行时的约定找配置目录，不再写死 `~/.claude/*`：
+
+| 运行时 | Skill 目录 | MCP 配置 | 克隆缓存 |
+|--------|-----------|---------|---------|
+| Claude Code | `~/.claude/skills/` | `~/.claude.json` | `~/.claude/clones/` |
+| Codex CLI   | `~/.codex/skills/` | `~/.codex/config.toml` | `~/.codex/clones/` |
+
+探测顺序：
+1. `SKILLBREW_RUNTIME=codex|claude`（显式指定，最高优先级）
+2. `CODEX_HOME` 环境变量存在 → 判定为 Codex
+3. `~/.codex` 目录存在 → 判定为 Codex
+4. 否则默认 Claude Code
+
+也可逐项覆盖路径：
+
+| 环境变量 | 覆盖项 |
+|---------|--------|
+| `SKILLBREW_SKILLS_DIR` | Skill 安装目录 |
+| `SKILLBREW_CLAUDE_JSON` | MCP 配置文件（Codex 下指向 `.codex/config.toml`） |
+| `SKILLBREW_CLONES_DIR` | 仓库克隆缓存目录 |
+| `SKILLBREW_CLAUDE_BIN` | `claude` 可执行文件路径 |
+
+CLI 也提供对应的全局参数：
+
+```bash
+skillbrew --runtime codex --mcp-json ~/.codex/config.toml --clones-dir ~/.codex/clones install <dir>
+```
+
+> **注意**：Codex 使用 TOML 配置 MCP，当前 skillbrew 已返回正确的 Codex 默认路径，但 TOML 的读写尚未实现（仅 JSON）。在 Codex 下如需注册 MCP，请先通过 `SKILLBREW_CLAUDE_BIN` 提供 Claude CLI，或等后续版本补齐 TOML 支持。
+
+项目级 `.claude/skills/` 检测保留：如果你在工作区里用项目级 Skill，无论哪个运行时都会优先识别。
+
 ## 快速开始
 
 **示例：从抖音视频安装 6 个 MCP 服务器**

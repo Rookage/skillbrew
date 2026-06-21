@@ -887,7 +887,7 @@ def record(source_dir: Path, *, skill_dirs: list[Path] | None = None,
         dd_path = source_dir / "dedup.json"
         dd = json.loads(dd_path.read_text(encoding="utf-8"))
         dirs = dd.get("baseline", {}).get("skill_dirs", [])
-        skill_dirs = [Path(d) for d in dirs] if dirs else [Path.home() / ".claude" / "skills"]
+        skill_dirs = [Path(d) for d in dirs] if dirs else [config.skills_dir()]
     else:
         skill_dirs = [Path(d) for d in skill_dirs]
 
