@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkillBREW — 技能酿造局</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --card: #181b21;
+      --text: #e6e9ef;
+      --muted: #9aa3b2;
+      --accent: #f2a93b;
+      --accent-2: #4cc38a;
+      --link: #6cb4ff;
+      --border: #2a2e36;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+    }
+    a { color: var(--link); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+    header {
+      padding: 72px 0 48px;
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo {
+      width: 80px; height: 80px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      border-radius: 20px;
+      margin: 0 auto 24px;
+      display: grid; place-items: center;
+      font-size: 36px; font-weight: 700; color: #0f1115;
+    }
+    h1 { font-size: 2.6rem; margin: 0 0 16px; letter-spacing: -0.5px; }
+    .tagline { color: var(--muted); font-size: 1.15rem; max-width: 680px; margin: 0 auto; }
+    .cta { margin-top: 32px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 12px 24px; border-radius: 10px; font-weight: 600;
+      border: 1px solid var(--border);
+      transition: transform .1s, border-color .2s;
+    }
+    .btn-primary { background: var(--accent); color: #0f1115; border-color: var(--accent); }
+    .btn-secondary { background: var(--card); color: var(--text); }
+    .btn:hover { transform: translateY(-1px); text-decoration: none; }
+
+    section { padding: 56px 0; border-bottom: 1px solid var(--border); }
+    h2 { font-size: 1.8rem; margin: 0 0 24px; }
+    h3 { font-size: 1.25rem; margin: 0 0 12px; }
+    p { margin: 0 0 16px; color: var(--muted); }
+
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px;
+      transition: border-color .2s;
+    }
+    .card:hover { border-color: var(--accent); }
+    .card .icon { font-size: 1.8rem; margin-bottom: 12px; }
+    .card p { margin: 0; }
+
+    .pipeline {
+      display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 24px 0;
+    }
+    .pipe-step {
+      background: var(--card); border: 1px solid var(--border); border-radius: 999px;
+      padding: 8px 18px; font-size: .95rem;
+    }
+    .pipe-arrow { color: var(--muted); align-self: center; }
+
+    pre {
+      background: #111318; border: 1px solid var(--border); border-radius: 12px;
+      padding: 16px; overflow-x: auto; font-size: .9rem; line-height: 1.6;
+    }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace; }
+
+    footer { padding: 40px 0; text-align: center; color: var(--muted); font-size: .9rem; }
+    footer a { margin: 0 10px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="logo">S</div>
+      <h1>SkillBREW</h1>
+      <p class="tagline">
+        技能酿造局：丢链接进去，<strong>自动消化、自动评估、自动去重，真实安装后留下透明台账</strong>，还能在 Claude Code 与 Codex CLI 之间<strong>双运行时中立</strong>运行。让你清楚 Agent 里有什么、怎么调。
+      </p>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://github.com/Rookage/skillbrew" target="_blank" rel="noopener">GitHub 仓库</a>
+        <a class="btn btn-secondary" href="#install">快速开始</a>
+      </div>
+    </div>
+  </header>
+
+  <section id="capabilities">
+    <div class="container">
+      <h2>五大核心能力</h2>
+      <div class="cards">
+        <div class="card">
+          <div class="icon">🧠</div>
+          <h3>自动去重</h3>
+          <p>把本地已装能力、历史台账和新推荐三者交叉比对。名字命中直接跳过，描述高度重叠标为整并候选，其余才算新增。</p>
+        </div>
+        <div class="card">
+          <div class="icon">⭐</div>
+          <h3>自动评估</h3>
+          <p>结合一手溯源（仓库存在性、星数、维护状态）和本机能力画像，给出「值得装 / 挑着装 / 整源跳过」的结构化建议。</p>
+        </div>
+        <div class="card">
+          <div class="icon">⚡</div>
+          <h3>真实安装</h3>
+          <p>默认 dry-run，授权后才真落盘。支持 Skill、MCP、代码、配置、Prompt 多种形态，按运行时约定落到正确位置。</p>
+        </div>
+        <div class="card">
+          <div class="icon">📊</div>
+          <h3>透明台账</h3>
+          <p>装完自动生成 RECORD.md 台账与 DASHBOARD.md 看板，记录来源、时间、调用方式和 D22 状态，越装越清楚。</p>
+        </div>
+        <div class="card">
+          <div class="icon">🖥️</div>
+          <h3>双运行时中立</h3>
+          <p>自动识别 Claude Code 与 Codex CLI，自动切换 Skill 目录、MCP 配置和克隆缓存路径，可用环境变量逐项覆盖。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="pipeline">
+    <div class="container">
+      <h2>8 步管线</h2>
+      <p>从丢链接到能力落地，每一步都可独立运行、可审计、可回滚。</p>
+      <div class="pipeline">
+        <span class="pipe-step">采集</span><span class="pipe-arrow">→</span>
+        <span class="pipe-step">理解</span><span class="pipe-arrow">→</span>
+        <span class="pipe-step">消化</span><span class="pipe-arrow">→</span>
+        <span class="pipe-step">溯源</span><span class="pipe-arrow">→</span>
+        <span class="pipe-step">判断</span><span class="pipe-arrow">→</span>
+        <span class="pipe-step">去重</span><span class="pipe-arrow">→</span>
+        <span class="pipe-step">安装</span><span class="pipe-arrow">→</span>
+        <span class="pipe-step">记录</span>
+      </div>
+      <p>中间产物全部落在 <code>data/sources/&lt;id&gt;/</code>，随时可复查。</p>
+    </div>
+  </section>
+
+  <section id="install">
+    <div class="container">
+      <h2>快速开始</h2>
+      <pre><code># 1. 克隆仓库
+git clone https://github.com/Rookage/skillbrew.git
+cd skillbrew
+
+# 2. 复制配置并填入你自己的 key
+cp .env.example .env
+#   编辑 .env：TEXT_API_KEY（DeepSeek）、VISION_API_KEY（Agnes）
+
+# 3. 安装（可编辑，注册 skillbrew 命令）
+pip install -e .
+
+# 4. 丢一个链接进去（以抖音 MCP 推荐视频为例）
+skillbrew run https://v.douyin.com/LcTwRFgJqas/
+
+# 5. 溯源 → 评估 → 去重
+skillbrew verify data/sources/douyin_7650401218518387995/
+skillbrew recommend data/sources/douyin_7650401218518387995/
+skillbrew dedup data/sources/douyin_7650401218518387995/
+
+# 6. 先看计划，确认后再真装
+skillbrew install data/sources/douyin_7650401218518387995/
+skillbrew install data/sources/douyin_7650401218518387995/ --approve
+
+# 7. 生成台账 + 看板
+skillbrew record data/sources/douyin_7650401218518387995/</code></pre>
+      <p>视频获取与语音转文字依赖较大，可按需安装：<code>pip install -e ".[media]"</code>。</p>
+    </div>
+  </section>
+
+  <section id="status">
+    <div class="container">
+      <h2>现状</h2>
+      <p>骨架已跑通端到端。已真装并验证多个 MCP 服务器（playwright、filesystem、sequential-thinking、context7、github 等），具体清单和调用方式以本地 <code>RECORD.md</code> 台账为准，不在这里硬编码。</p>
+      <p>明确暂缓项：memos MCP 与 MoneyPrinterTurbo，已和用户确认暂不安装。</p>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      <p>
+        <a href="https://github.com/Rookage/skillbrew">GitHub</a>
+        <a href="../README.md">README</a>
+        <a href="../PROJECT_CHARTER.md">项目章程</a>
+        <a href="../HANDOFF.md">交接文档</a>
+      </p>
+      <p>© skillbrew contributors</p>
+    </div>
+  </footer>
+</body>
+</html>

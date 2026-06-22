@@ -10,6 +10,8 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [{name = "skillbrew contributors"}]
+repository = "https://github.com/Rookage/skillbrew"
+homepage = "https://rookage.github.io/skillbrew"
 dependencies = [
     "openai>=1.0",
 ]

@@ -2,7 +2,7 @@
 
 > **刷视频 → 收藏吃灰 → 重复装 → 越来越臃肿 → 装完不会调...**
 >
-> 技能酿造局：丢链接进去，酿出可装的能力，自动去重，装完出报告，让你清楚 Agent 里有什么、怎么调。
+> 技能酿造局：丢链接进去，**自动消化、自动评估、自动去重，真实安装后留下透明台账**，还能在 Claude Code 与 Codex CLI 之间**双运行时中立**运行。让你清楚 Agent 里有什么、怎么调。
 
 ---
 
@@ -20,33 +20,34 @@
 
 ---
 
-## 能力矩阵
+## 五大核心能力
 
-### 🧪 消化能力
+### 🧠 自动去重
 
-把「信息」酿成「可执行计划」
+把**本地已装能力**、**历史台账**和**新推荐**三者交叉比对，避免重复安装。
 
-- **多源采集**：B站 / 抖音 / YouTube / 文件 / 网页，丢链接就行
-- **智能理解**：字幕 + 关键帧视觉，提取「装什么、怎么装、依赖什么」
-- **自动溯源**：GitHub 一手核实，不装过期包、不抄二手教程
-- **多形态识别**：Skill / MCP / 代码 / 配置 / Prompt，不挑活
+- 名字归一化命中 → 直接跳过
+- 描述共享 ≥3 个有意义词 → 给出整并候选
+- 其余 → 判定为新增
+- 三层从严，只判「是否重复」，不黑盒决定「是否值得装」
 
-**技术实现**：
-- 文本理解：DeepSeek（deepseek-chat）
-- 视觉理解：Agnes（agnes-1.5-flash）
-- 字幕提取：yt-dlp + faster-whisper
-- 关键帧抽取：ffmpeg
+### ⭐ 自动评估
 
-### 🔧 安装能力
+`recommend` 判断步给每个候选能力打分，帮你决定：**值不值得装 / 挑着装 / 整源跳过**。
 
-把「计划」变成「真实能力」
+- 结合一手溯源结果（仓库存在性、星数、维护状态）
+- 结合你已装的能力画像，标出重复/重叠
+- 输出结构化建议，最终拍板权在人
 
-- **多形态支持**：Skill / MCP / 代码 / 配置 / Prompt，不挑活
-- **授权门**：默认 dry-run，`--approve` 才真落盘，你说了算
-- **去重机制**：三层从严判定（名字 / 描述 / 语义），不重复装
-- **回滚支持**：装错了？一条命令退回干净状态
+### ⚡ 真实安装
 
-**安装方式**：
+不是只出计划，是**真正落盘**。
+
+- 默认 **dry-run**，`--approve` 才真写
+- 多形态支持：Skill / MCP / 代码 / 配置 / Prompt
+- 按运行时约定落点（Claude Code / Codex CLI）
+- 装完即能用，装错可回滚
+
 | 形态 | 落地位置 | 安装方式 |
 |------|---------|---------|
 | Skill | `.claude/skills/<name>/` | 整目录拷贝（含 SKILL.md） |
@@ -55,14 +56,28 @@
 | 配置 | `CLAUDE.md` 或片段库 | 追加或覆盖 |
 | Prompt | 片段库或 Skill | 模板化存储 |
 
-### 📊 管理能力
+### 📊 透明台账
 
-把「装了什么」变成「清楚知道」
+装完不是结束，是留下一张清楚的能力地图。
 
-- **台账 RECORD.md**：装了 56 个能力，每个来源、时间、调用方式
-- **看板 DASHBOARD.md**：可视化统计，一眼看清能力分布
-- **回滚支持**：装错了？一条命令退回干净状态
-- **D22 装完前必做**：透明标注「装了不能立刻用 / 要凭证」的能力
+- **RECORD.md**：每次安装的来源、时间、调用方式、D22 状态
+- **DASHBOARD.md**：累计看板，一眼看清能力分布
+- **去重/归并/可移除**：台账驱动，不会越装越乱
+- **调用方式透明**：每个能力都标注怎么触发（`@skill` 名 / 触发提示词）
+
+### 🖥️ 双运行时中立
+
+不绑定某一个 Agent 运行时，**Claude Code / Codex CLI 都能跑**。
+
+- 自动探测当前运行时
+- 自动切换 Skill 目录、MCP 配置、克隆缓存路径
+- 可用环境变量逐项覆盖，项目级 `.claude/skills/` 同样识别
+
+**技术实现**：
+- 文本理解：DeepSeek（deepseek-chat）
+- 视觉理解：Agnes（agnes-1.5-flash）
+- 字幕提取：yt-dlp + faster-whisper
+- 关键帧抽取：ffmpeg + PIL 帧间差异签名
 
 ---
 
@@ -73,9 +88,10 @@
    ↓
 SkillBREW 接管
    ↓
-丢链接 → 自动消化 → 去重判断 → 授权安装 → 台账记录
+丢链接 → 自动消化 → 自动评估 → 去重判断 → 授权安装 → 台账记录
    ↓
-清楚知道：装了 56 个能力，4 个 MCP 服务器，每个怎么调
+清楚知道：装了哪些能力、几个 MCP 服务器、每个怎么调
+（具体数字以本地台账为准，不硬编码）
 ```
 
 ---
@@ -106,11 +122,13 @@ SkillBREW 接管
 **骨架阶段，但已跑通端到端。**
 
 - ✅ 8 步管线全通（B站 / 抖音双源验证）
-- ✅ 多形态支持（Skill + MCP，已真装 4 个 MCP 服务器）
-- ✅ 去重机制（三层从严，名字 / 描述 / 语义）
+- ✅ 多形态支持（Skill + MCP + 代码 / 配置 / Prompt）
+- ✅ 自动去重（三层从严：名字 / 描述 / 语义）
+- ✅ 自动评估（`recommend` 输出值得装 / 挑着装 / 跳过建议）
 - ✅ 可视化报告（RECORD.md 台账 + DASHBOARD.md 看板）
 - ✅ 授权门（默认 dry-run，`--approve` 才真装）
-- ✅ D22 装完前必做（透明标注「装了不能立刻用 / 要凭证」的能力）
+- ✅ D22 装完前必做（透明标注 ready / needs_runtime / needs_config / needs_credentials）
+- ✅ 双运行时中立（Claude Code / Codex CLI 自动识别）
 
 **已真装验证的 MCP 服务器：**
 
@@ -120,7 +138,12 @@ SkillBREW 接管
 | `@modelcontextprotocol/server-filesystem` | 文件系统访问（读写指定目录） | ✅ 已装 |
 | `@modelcontextprotocol/server-sequential-thinking` | 结构化思考（复杂问题分步推理） | ✅ 已装 |
 | `@upstash/context7-mcp` | 官方文档查询（查最新库文档） | ✅ 已装 |
-| `@modelcontextprotocol/server-github` | GitHub 操作（需 PAT 凭证） | ⏳ 待凭证 |
+| `@modelcontextprotocol/server-github` | GitHub 操作（issue / PR / 仓库查询） | ✅ 已装（已配置 PAT 并冒烟测试） |
+
+**明确不列入当前已完成（已和你确认）：**
+
+- Memos MCP：无官方 npm 包，候选 `@modelcontextprotocol/server-memory`，暂不安装
+- MoneyPrinterTurbo：还缺 OPENAI_API_KEY，暂不配置
 
 **技术栈：**
 
@@ -157,9 +180,10 @@ skillbrew 默认按所在运行时的约定找配置目录，不再写死 `~/.cl
 
 探测顺序：
 1. `SKILLBREW_RUNTIME=codex|claude`（显式指定，最高优先级）
-2. `CODEX_HOME` 环境变量存在 → 判定为 Codex
-3. `~/.codex` 目录存在 → 判定为 Codex
-4. 否则默认 Claude Code
+2. `CLAUDECODE=1` / `CLAUDE_CODE_SESSION_ID` / `CLAUDE_CODE_EXECPATH` → 判定为 Claude Code
+3. `CODEX_HOME` 环境变量存在 → 判定为 Codex
+4. `~/.codex` 目录存在 → 判定为 Codex
+5. 否则默认 Claude Code
 
 也可逐项覆盖路径：
 
@@ -283,7 +307,7 @@ install（默认 dry-run）
   - 要装 5 个 MCP 服务器
   - playwright（needs_runtime：首次调用下载浏览器内核）
   - filesystem（needs_config：需指定允许访问目录）
-  - github（needs_credentials：需 PAT 凭证，默认跳过）
+  - github（needs_credentials：需 PAT 凭证）
   - ...
     ↓
 用户确认？
