@@ -122,12 +122,19 @@ def detect_runtime() -> str:
 
     探测顺序：
       1. 环境变量 ``SKILLBREW_RUNTIME``（部署方显式指定，不进仓库）；
-      2. 环境变量 ``CODEX_HOME`` 存在，或 ``~/.codex`` 目录存在 → 'codex'；
-      3. 默认返回 'claude'。
+      2. Claude Code 特征：``CLAUDECODE=1`` 或 ``CLAUDE_CODE_SESSION_ID`` /
+         ``CLAUDE_CODE_EXECPATH`` 任一存在 → 'claude'；
+      3. Codex 特征：``CODEX_HOME`` 存在，或 ``~/.codex`` 目录存在 → 'codex'；
+      4. 默认返回 'claude'。
+
+    修正：本环境同时存在 ``~/.claude.json`` 与 ``~/.codex`` 目录，优先认
+    Claude Code 专属环境变量，避免把 MCP 错写到 Codex 配置里。
     """
     env_hint = (os.environ.get("SKILLBREW_RUNTIME") or "").strip().lower()
     if env_hint in ("claude", "codex"):
         return env_hint
+    if os.environ.get("CLAUDECODE") == "1" or os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("CLAUDE_CODE_EXECPATH"):
+        return "claude"
     if os.environ.get("CODEX_HOME"):
         return "codex"
     if (Path.home() / ".codex").exists():
@@ -183,7 +190,9 @@ def claude_bin() -> str | None:
          （如 Coze 3.0 随 SDK 打包的 claude v2.1.156，支持 ``claude mcp add -s
          user`` / ``get`` / ``list`` / ``remove`` 子命令；该 env 只存在本机、不进仓库）；
       2. PATH 上的 ``claude``（shutil.which）—— 通用环境优先走这条；
-      3. 都没有 → None，install 退回原子 JSON 合并 fallback。
+      3. Claude Code SDK 自带的 bundled binary：先读 ``CLAUDE_CODE_EXECPATH``，
+         否则探测 ``~/.coze/bridge/lib/node_modules/@anthropic-ai/claude-agent-sdk-*/claude``；
+      4. 都没有 → None，install 退回原子 JSON 合并 fallback。
     """
     env_hint = os.environ.get("SKILLBREW_CLAUDE_BIN")
     if env_hint and os.access(env_hint, os.X_OK):
@@ -191,6 +200,23 @@ def claude_bin() -> str | None:
     found = shutil.which("claude")
     if found:
         return found
+    exec_env = os.environ.get("CLAUDE_CODE_EXECPATH")
+    if exec_env and os.access(exec_env, os.X_OK):
+        return exec_env
+    # 探测 Coze / Claude Code 打包路径（按当前平台取对应二进制）
+    bridge = Path.home() / ".coze" / "bridge" / "lib" / "node_modules"
+    import platform
+    arch = platform.machine().lower()
+    platform_tag = "linux-x64"
+    if "arm64" in arch or "aarch64" in arch:
+        platform_tag = "linux-arm64"
+    bundled = bridge / f"@anthropic-ai" / f"claude-agent-sdk-{platform_tag}" / "claude"
+    if bundled.exists() and os.access(bundled, os.X_OK):
+        return str(bundled)
+    # 兜底：通配列出所有 claude-agent-sdk-* 目录，取第一个可执行文件
+    for candidate in sorted((bridge / "@anthropic-ai").glob("claude-agent-sdk-*/claude")):
+        if os.access(candidate, os.X_OK):
+            return str(candidate)
     return None
 
 

@@ -27,6 +27,9 @@ def _clean_env(monkeypatch):
         "SKILLBREW_CLAUDE_JSON",
         "SKILLBREW_CLONES_DIR",
         "CODEX_HOME",
+        "CLAUDECODE",
+        "CLAUDE_CODE_SESSION_ID",
+        "CLAUDE_CODE_EXECPATH",
     ):
         monkeypatch.delenv(key, raising=False)
 
