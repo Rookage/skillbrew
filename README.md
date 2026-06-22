@@ -60,7 +60,7 @@
 
 装完不是结束，是留下一张清楚的能力地图。
 
-- **RECORD.md**：每次安装的来源、时间、调用方式、D22 状态
+- **RECORD.md**：每次安装的来源、时间、调用方式、就绪状态（ready / needs_config 等）
 - **DASHBOARD.md**：累计看板，一眼看清能力分布
 - **去重/归并/可移除**：台账驱动，不会越装越乱
 - **调用方式透明**：每个能力都标注怎么触发（`@skill` 名 / 触发提示词）
@@ -127,7 +127,7 @@ SkillBREW 接管
 - ✅ 自动评估（`recommend` 输出值得装 / 挑着装 / 跳过建议）
 - ✅ 可视化报告（RECORD.md 台账 + DASHBOARD.md 看板）
 - ✅ 授权门（默认 dry-run，`--approve` 才真装）
-- ✅ D22 装完前必做（透明标注 ready / needs_runtime / needs_config / needs_credentials）
+- ✅ 安装后 readiness 标注（透明标注 ready / needs_runtime / needs_config / needs_credentials）
 - ✅ 双运行时中立（Claude Code / Codex CLI 自动识别）
 
 **已真装验证的 MCP 服务器：**
@@ -140,7 +140,7 @@ SkillBREW 接管
 | `@upstash/context7-mcp` | 官方文档查询（查最新库文档） | ✅ 已装 |
 | `@modelcontextprotocol/server-github` | GitHub 操作（issue / PR / 仓库查询） | ✅ 已装（已配置 PAT 并冒烟测试） |
 
-**明确不列入当前已完成（已和你确认）：**
+**以下能力因外部依赖或凭证未就绪，当前版本未默认安装：**
 
 - Memos MCP：无官方 npm 包，候选 `@modelcontextprotocol/server-memory`，暂不安装
 - MoneyPrinterTurbo：还缺 OPENAI_API_KEY，暂不配置
@@ -278,12 +278,12 @@ skillbrew config            # 打印解析后的配置（key 脱敏）
 **为什么分两组配置？**
 
 - **文本组（DeepSeek）**：消化视频内容、生成执行计划、评分排序——这些是纯文本推理任务，DeepSeek 性价比高
-- **视觉组（Agnes）**：看关键帧截图、提取视频画面信息——DeepSeek 官方 API 视觉暂未开放（命门实测，见章程 r9），Agnes 是当前唯一已测真看图的官方 API
+- **视觉组（Agnes）**：看关键帧截图、提取视频画面信息——截至 2026-06-19 实测，DeepSeek 官方 API 视觉能力暂未开放，Agnes 是当前唯一已测真看图的官方 API
 - **可插拔设计（D15）**：`chat_text` / `chat_vision` 两个函数封装，换供应商只改 `.env`，代码零改动
 
 **为什么视觉用 Agnes 而不是其他？**
 
-DeepSeek 官方 API 视觉能力暂未开放（章程 r9 命门实测）。我们测了多个供应商，Agnes 是当前唯一已验证能真看图的官方 API。虽然慢（~5min/张），但能完成关键帧理解任务。
+截至 2026-06-19 实测，DeepSeek 官方 API 视觉能力暂未开放。我们测了多个供应商，Agnes 是当前唯一已验证能真看图的官方 API。虽然慢（~5min/张），但能完成关键帧理解任务。
 
 ---
 
@@ -315,7 +315,7 @@ install（默认 dry-run）
   └─ 是 → install --approve → 真装 → 记录台账
 ```
 
-**D22 装完前必做**
+**安装后 readiness 标注**
 
 透明标注「装了不能立刻用 / 要凭证」的能力，不黑箱：
 
@@ -331,8 +331,6 @@ install（默认 dry-run）
 ## 项目章程
 
 目标 / 技术路线 / 架构 / 依赖 / 里程碑，见 [`PROJECT_CHARTER.md`](./PROJECT_CHARTER.md)。
-
-交接文档（Step 5 完成记录），见 [`HANDOFF.md`](./HANDOFF.md)。
 
 ---
 
