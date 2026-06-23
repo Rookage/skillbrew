@@ -845,9 +845,9 @@ def _verify_skill(
         },
         "branch": branch,
         "raw_base": f"{RAW_BASE}/{owner}/{repo}/{branch}",
-        "install_method": "copy_whole_dir",
+        "install_method": "per_file_raw_download",
         "form": "Skill",
-        "note": "每个 skill = 其整个目录；install 时按 dir_path 整目录从 raw_url 拷到 .claude/skills/<name>/",
+        "note": "每个 skill = files[] 列出的文件；install 时从 raw_url 逐文件下载到 .claude/skills/<name>/（不整目录拷）",
         "total": len(skills),
         "items": skills,   # 规范键（章程 D2，下游统一读 items[]）
         "skills": skills,  # 兼容别名，与 items 同数组引用

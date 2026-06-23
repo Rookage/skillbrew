@@ -1,7 +1,8 @@
-"""install：安装 —— 照 dedup 判定的 new 能力，按形态分发安装并登记台账。
+"""install：安装 —— 按 dedup 判定的 new 能力集合，可选地用 recommend 步的 verdict 做「挑着买」过滤，
+再按形态分发安装并登记台账。
 
 形态分发（章程 D2/D20，产物形态由计划内容决定、不预设）：
-  - form=="Skill" → 整目录从 GitHub raw 拷到本地 .claude/skills/<name>/（须 SKILL.md）
+  - form=="Skill" → 从 GitHub raw 逐文件下载到本地 .claude/skills/<name>/（须 SKILL.md）
   - form=="MCP"   → 注册进 ~/.claude.json mcpServers（默认 user scope），CLI-first：
                     优先 `claude mcp add -s user ...`（官方原子操作），无 binary 时
                     fallback 原子 JSON 合并（.bak + mtime 守卫 + 写后 json.loads 校验 + 回滚）
@@ -15,10 +16,13 @@
 带 --approve 才真落盘 + 写台账，保"你落盘就是什么"。
 
 装哪些：
-  - dedup 判 new 的 → 装（按 form 分发）
   - dedup 判 merge 的 → 不自动装（整并需人工确认，标出来留给后面）
   - dedup 判 skip 的 → 不装（已装/已整并）
   - new 里 category=deprecated 的 → 默认跳过（--include-deprecated 才装）
+  - 若存在 recommend.json（已跑过 recommend 步）→ 仅装 verdict == "值得装" (V_WORTH)
+    的 new 候选，其余 new 放进 skipped_not_approved（D20「挑着买」自动落地）。
+  - 若不存在 recommend.json（recommend 步没跑 / 旧 run）→ 回退到旧行为：照 dedup
+    的 new 全部装（向后兼容，不强制用户必须先跑 recommend）。
   - needs_credentials 的 MCP（如 github 需 PAT）→ dry-run 高亮「需凭证」，
     --approve 默认跳过真装（除非对应 credential_env 已在环境里配好），不替用户造凭证
   - needs_config 的 MCP（如 filesystem 的 <DIRS>）→ --approve 把 <DIRS> 默认填
@@ -26,10 +30,6 @@
 
 unresolved（verify 透明降级，如 memos 无官方 MCP）→ 不在 items、不在 to_install，
 原样透传进报告标「待定夺」，install 不猜包装（D19/D22）。
-
-install 是 dedup-driven（照 dedup 的 new 装），不读 recommend.json——recommend 是
-判断步（值不值得装）出建议名单，install 只管"装哪些 new、按什么形态装"。挑着买
-（D20）由你在 recommend 步看到 verdict 后自行定夺（manual/ai 模式可覆写）。
 
 纯 GitHub raw 下载（raw 不耗 API 限额）+ 标准库 + claude CLI；不调 LLM、不耗配额。
 """
@@ -47,6 +47,7 @@ from pathlib import Path
 
 from . import config
 from . import registry
+from .recommend import V_WORTH
 from .verify import parse_frontmatter  # 复用 SKILL.md frontmatter 轻量解析
 
 UA = "skillbrew"  # GitHub raw 也要求带 User-Agent
@@ -136,7 +137,7 @@ def _install_skill(conn, item: dict, decision: dict, target: Path,
         file_count=n_files,
         status="active",
         attribution=f"{full_name}（GitHub 开源）",
-        dedup_note="dedup 判定 new，整目录拷贝安装",
+        dedup_note="dedup 判定 new，从 GitHub raw 逐文件下载安装",
         installed_at=_now_iso(),
     )
     return {"name": name, "display_name": display_name,
@@ -546,12 +547,22 @@ def install(
     source_dir = Path(source_dir)
     il_path = source_dir / "install_list.json"
     dd_path = source_dir / "dedup.json"
+    rec_path = source_dir / "recommend.json"
     if not il_path.exists():
         raise RuntimeError(f"没有 install_list.json，先跑 verify：{il_path}")
     if not dd_path.exists():
         raise RuntimeError(f"没有 dedup.json，先跑 dedup：{dd_path}")
     install_list = json.loads(il_path.read_text(encoding="utf-8"))
     dedup_report = json.loads(dd_path.read_text(encoding="utf-8"))
+
+    # D20「挑着买」：recommend.json 可选。有 → 仅装 verdict==V_WORTH；没有 → 回退旧行为（全装 new）。
+    approved_set: set[str] | None = None
+    recommend_present = rec_path.exists()
+    if recommend_present:
+        rec_report = json.loads(rec_path.read_text(encoding="utf-8"))
+        j_list = rec_report.get("judgments", [])
+        # judgments 在磁盘上是 asdict(Judgment) 的 dict 列表，直接按 key 取值
+        approved_set = {j["name"] for j in j_list if j.get("verdict") == V_WORTH}
 
     repo = install_list.get("verified_repo", {})
     full_name = repo.get("full_name", "")
@@ -565,6 +576,7 @@ def install(
     skipped_merge: list[dict] = []
     skipped_deprecated: list[dict] = []
     skipped_already: list[dict] = []
+    skipped_not_approved: list[dict] = []
     for d in dedup_report.get("decisions", []):
         cat = d.get("category", "")
         dec = d["decision"]
@@ -575,6 +587,8 @@ def install(
         elif dec == "new":
             if cat == "deprecated" and not include_deprecated:
                 skipped_deprecated.append(d)
+            elif approved_set is not None and d.get("name") not in approved_set:
+                skipped_not_approved.append(d)  # D20：recommend 判「不值得装」→ 跳过
             else:
                 to_install.append(d)
 
@@ -621,6 +635,8 @@ def install(
         "skipped_merge": [d["name"] for d in skipped_merge],
         "skipped_deprecated": [d["name"] for d in skipped_deprecated],
         "skipped_already": [d["name"] for d in skipped_already],
+        "skipped_not_approved": [d["name"] for d in skipped_not_approved],
+        "recommend_present": recommend_present,
         "unresolved": install_list.get("unresolved") or dedup_report.get("unresolved", []),
     }
 
@@ -687,7 +703,9 @@ def install(
             notes=(
                 f"装 {len(installed)} 个新能力；跳过 merge {len(skipped_merge)}/"
                 f"deprecated {len(skipped_deprecated)}/已装 {len(skipped_already)}/"
+                f"不值得装 {len(skipped_not_approved)}/"
                 f"需凭证 {len(skipped_credentials)}/需配置 {len(skipped_config)}"
+                f"{'（recommend 过滤生效）' if recommend_present else '（无 recommend.json，旧行为）'}"
             ),
         )
     finally:
@@ -730,8 +748,11 @@ def format_plan_text(r: dict) -> str:
     lines = [
         f"源视频：{r['source_video']}  仓库：{r['verified_repo'] or '(未知)'}",
         f"目标/注册：{target_line}  安装前 distinct：{r['before']}",
-        f"将装 new：{len(r['to_install'])} 个",
     ]
+    if r.get("recommend_present"):
+        lines.append(f"将装 new（已按 recommend.approved 过滤）：{len(r['to_install'])} 个")
+    else:
+        lines.append(f"将装 new（无 recommend.json，旧行为：全装 new）：{len(r['to_install'])} 个")
     for it in r.get("items_detail") or []:
         form = it.get("form", "Skill")
         tag = ""
@@ -764,6 +785,9 @@ def format_plan_text(r: dict) -> str:
         lines.append(f"跳过 deprecated：{len(r['skipped_deprecated'])} 个 → {r['skipped_deprecated']}（--include-deprecated 可装）")
     if r.get("skipped_already"):
         lines.append(f"跳过已装/已整并：{len(r['skipped_already'])} 个")
+    sna = r.get("skipped_not_approved") or []
+    if sna:
+        lines.append(f"跳过 recommend 判「不值得装」：{len(sna)} 个 → {sna}")
     sc = r.get("skipped_credentials") or []
     if sc:
         lines.append(f"跳过需凭证（待配 credential_env）：{[s['name'] for s in sc]}")
