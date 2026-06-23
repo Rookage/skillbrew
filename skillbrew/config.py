@@ -142,6 +142,25 @@ def detect_runtime() -> str:
     return "claude"
 
 
+# ---- Claude / Codex 配置根目录 ----
+
+def claude_home() -> Path:
+    """返回当前运行时的配置根目录（存放 INSTALLED_INDEX.md / CLAUDE.md / 等用户级文件）。
+
+    优先级：
+      1. 环境变量 ``SKILLBREW_CLAUDE_HOME``（部署方显式指定，不进仓库）；
+      2. 运行时感知默认：
+         - Claude Code → ``~/.claude``
+         - Codex       → ``~/.codex``
+    """
+    env_hint = os.environ.get("SKILLBREW_CLAUDE_HOME")
+    if env_hint:
+        return Path(env_hint)
+    if detect_runtime() == "codex":
+        return Path.home() / ".codex"
+    return Path.home() / ".claude"
+
+
 # ---- MCP（模型上下文协议）安装相关配置 ----
 
 def claude_json_path() -> Path:

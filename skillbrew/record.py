@@ -20,10 +20,12 @@ personal（作者个人）类——代码去重只判"是否重复"（名字/描
 from __future__ import annotations
 
 import json
+import os
+import re
 from datetime import datetime
 from pathlib import Path
 
-from . import registry
+from . import config, registry
 from . import dedup as dedup_mod  # 复用 scan_local_skills / _key 做落盘核对
 
 
@@ -868,6 +870,163 @@ def _gen_dashboard(g: dict) -> str:
     return "\n".join(L)
 
 
+# ---- R1 调度器 MVP：生成已装能力索引 + 非破坏性注入 CLAUDE.md ----
+
+_INDEX_BEGIN = "<!-- skillbrew-installed-index -->"
+_INDEX_END = "<!-- /skillbrew-installed-index -->"
+
+_FRONTMATTER_DESC_RE = re.compile(
+    r"^---\s*\n(?:.*?\n)*?description\s*:\s*[\"']?([^\n\"']+)[\"']?\s*\n(?:.*?\n)*?---",
+    re.DOTALL,
+)
+
+
+def _read_skill_description(install_path: str | None) -> str:
+    """从 Skill 的 SKILL.md 抠 frontmatter description 作为一行描述；读不到回退空串。"""
+    if not install_path:
+        return ""
+    p = Path(install_path) / "SKILL.md"
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")[:4096]
+    except OSError:
+        return ""
+    m = _FRONTMATTER_DESC_RE.match(text)
+    if m:
+        return m.group(1).strip()
+    return ""
+
+
+def _gen_installed_index(active: list[dict]) -> str:
+    """生成 INSTALLED_INDEX.md 内容：Skill/MCP/repo 三段表，全量 active 能力。
+
+    这是 charter §9.3 R1 调度器的 MVP 桥接：v3+ 前不做真正的自动调度器/cron/hook，
+    只在每次 record() 后刷一份全量索引到 ~/.claude/INSTALLED_INDEX.md，
+    并在 CLAUDE.md 里注入一个指向它的 sentinel 块——Claude Code 启动时会读到，
+    解决「装了一堆能力但不知道有啥、怎么调」的 R1 痛点。
+    """
+    skills = [r for r in active if (r.get("form") or "Skill").lower() == "skill" or not r.get("form")]
+    mcps = [r for r in active if (r.get("form") or "").lower() == "mcp"]
+    repos = [r for r in active if (r.get("form") or "").lower() in ("repo", "repository")]
+    others = [r for r in active if r not in skills and r not in mcps and r not in repos]
+
+    L: list[str] = []
+    L.append("# 已装能力索引（skillbrew 生成）\n")
+    L.append("> 本文由 skillbrew 在每次 `record` 后自动刷新（R1 调度器 MVP 桥接）。"
+             "完整自动调度留 v3+；此处仅列出累计所有 active 能力，"
+             "供 Claude Code 启动时识别已装清单，避免「装了一堆但不知道有啥」。\n")
+    L.append(f"- 生成时间：{_now_iso()}")
+    L.append(f"- 累计 active 能力：{len(active)}（Skill {len(skills)} / MCP {len(mcps)} / repo {len(repos)}"
+             f"{' / 其它 ' + str(len(others)) if others else ''}）")
+    L.append("- 关闭本文件生成：设环境变量 `SKILLBREW_NO_INDEX=1`。\n")
+
+    def _section(title: str, rows: list[dict]) -> None:
+        L.append(f"## {title}\n")
+        if not rows:
+            L.append("（无）\n")
+            return
+        L.append("| 名字 | 形态 | 一句话说明 | 调用方式 | 路径 |")
+        L.append("|------|------|------------|----------|------|")
+        for r in sorted(rows, key=lambda x: (x.get("source") or "", x.get("name") or "")):
+            name = r.get("display_name") or r.get("name") or "?"
+            form = r.get("form") or "Skill"
+            ipath = r.get("install_path") or "—"
+            # 描述：registry 里有 description 优先；否则 Skill 尝试读 SKILL.md frontmatter
+            desc = (r.get("notes") or "").strip()
+            if not desc and form.lower() in ("skill", ""):
+                desc = _short(_read_skill_description(ipath), 80)
+            if not desc:
+                desc = f"来源 {r.get('source') or '?'}"
+            hint = _invoke_hint(name, form)
+            L.append(f"| `{name}` | {form} | {_short(desc, 80)} | {hint} | `{ipath}` |")
+        L.append("")
+
+    _section("Skill（技能）", skills)
+    _section("MCP 服务器", mcps)
+    _section("repo（克隆即用仓库）", repos)
+    if others:
+        _section("其它", others)
+    L.append("---\n")
+    L.append(f"*本文件由 skillbrew 自动生成于 {_now_iso()}，覆盖刷新，勿手工编辑。*\n")
+    return "\n".join(L)
+
+
+def _update_claude_md(claude_md: Path, index_path: Path) -> None:
+    """非破坏性注入/刷新 CLAUDE.md 里的 sentinel 块，指向 INSTALLED_INDEX.md。
+
+    规则：
+      - 文件不存在 → 创建，仅含 sentinel 块；
+      - 已存在但无 sentinel → 末尾追加；
+      - 已存在且有 sentinel → 替换块内容（幂等，不重复注入）；
+      - 写入失败（权限/只读等）→ 打印提示但不抛，不中断主流程。
+    """
+    block = (
+        f"{_INDEX_BEGIN}\n"
+        f"> 以下由 skillbrew 自动维护（R1 调度器 MVP 桥接）：本环境累计已装能力索引见\n"
+        f"> `{index_path}`。每次 `skillbrew record` 后自动刷新，勿手工编辑本块。\n"
+        f"{_INDEX_END}\n"
+    )
+    try:
+        if claude_md.exists():
+            text = claude_md.read_text(encoding="utf-8", errors="replace")
+            if _INDEX_BEGIN in text and _INDEX_END in text:
+                # 替换已有块（幂等）
+                pattern = re.compile(
+                    re.escape(_INDEX_BEGIN) + r".*?" + re.escape(_INDEX_END) + r"\s*",
+                    re.DOTALL,
+                )
+                new_text = pattern.sub(block, text, count=1)
+            else:
+                # 追加，保留用户原文
+                sep = "" if text.endswith("\n") else "\n"
+                new_text = text + sep + "\n" + block
+        else:
+            claude_md.parent.mkdir(parents=True, exist_ok=True)
+            new_text = (
+                "# CLAUDE.md\n\n"
+                "本文件由 skillbrew 初始化，含一个自动维护的已装能力索引指针；"
+                "你可在 sentinel 块外添加任意项目级指令，skillbrew 不会动它们。\n\n"
+                + block
+            )
+        claude_md.write_text(new_text, encoding="utf-8")
+    except OSError as e:
+        print(f"[record] 提示：写 CLAUDE.md 失败（{e}），已装索引仍写入 {index_path}，"
+              f"可手动在 CLAUDE.md 加一句『参考 {index_path}』。")
+
+
+def _write_installed_index(db_path, on_progress) -> dict | None:
+    """查台账全量 active → 写 INSTALLED_INDEX.md → 刷新 CLAUDE.md sentinel。
+
+    返回 {index_path, claude_md_path, active_count}，失败返回 None 不中断主流程。
+    受环境变量 SKILLBREW_NO_INDEX=1 控制——设了就完全跳过（用户主动关）。
+    """
+    if os.environ.get("SKILLBREW_NO_INDEX", "").strip() in ("1", "true", "TRUE", "yes"):
+        if on_progress:
+            on_progress("index", "skipped (SKILLBREW_NO_INDEX=1)")
+        return None
+    try:
+        from .registry import DB_PATH, connect, list_skills
+        dp = db_path or DB_PATH
+        conn = connect(dp)
+        try:
+            active = list_skills(conn, status="active")
+        finally:
+            conn.close()
+        home = config.claude_home()
+        home.mkdir(parents=True, exist_ok=True)
+        index_path = home / "INSTALLED_INDEX.md"
+        claude_md = home / "CLAUDE.md"
+        index_path.write_text(_gen_installed_index(active), encoding="utf-8")
+        _update_claude_md(claude_md, index_path)
+        if on_progress:
+            on_progress("index", f"{len(active)} active → {index_path}")
+        return {"index_path": str(index_path), "claude_md_path": str(claude_md),
+                "active_count": len(active)}
+    except Exception as e:
+        # 索引导出是锦上添花，任何异常都不应该打断 record 主流程
+        print(f"[record] 提示：生成已装索引失败（{e}），不影响 RECORD/DASHBOARD。")
+        return None
+
+
 def record(source_dir: Path, *, skill_dirs: list[Path] | None = None,
            db_path=None, on_progress=None) -> dict:
     """对一个源目录生成安装记录 + 看板：读 install_list.json / dedup.json / registry.db，
@@ -904,7 +1063,10 @@ def record(source_dir: Path, *, skill_dirs: list[Path] | None = None,
     record_path.write_text(record_md, encoding="utf-8")
     dashboard_path.write_text(dashboard_md, encoding="utf-8")
 
-    return {
+    # R1 调度器 MVP：刷全量已装能力索引 + CLAUDE.md sentinel 注入（锦上添花，不崩主流程）
+    index_info = _write_installed_index(db_path, on_progress)
+
+    result = {
         "source_video": source_dir.name,
         "verified_repo": g["full_name"],
         "record_path": str(record_path),
@@ -919,6 +1081,9 @@ def record(source_dir: Path, *, skill_dirs: list[Path] | None = None,
         "sessions": len(g["src_sessions"]),
         "this_run_installed": [d["name"] for d in g["new_installed"]],
     }
+    if index_info:
+        result["installed_index"] = index_info
+    return result
 
 
 # ---- 直接运行：python -m skillbrew.record <源目录> [--skills-dir DIR ...] ----
