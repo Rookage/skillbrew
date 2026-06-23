@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -172,8 +173,8 @@ def claude_json_path() -> Path:
          - Claude Code → ``~/.claude.json``
          - Codex       → ``~/.codex/config.toml``
 
-    注意：Codex 使用 TOML 格式，当前版本仅实现 Claude 运行时的 JSON 读写；
-    Codex 下会返回正确的 toml 路径，但涉及 JSON 合并的调用方应安全退空（不崩）。
+    注意：Codex 使用 TOML 格式，读写由 install._toml_* 工具函数完成（文本级段切分，
+    不做全量 TOML 解析，用户其他 section/注释原样保留）。
     """
     env_hint = os.environ.get("SKILLBREW_CLAUDE_JSON")
     if env_hint:
@@ -217,11 +218,31 @@ def claude_bin() -> str | None:
     if env_hint and os.access(env_hint, os.X_OK):
         return env_hint
     found = shutil.which("claude")
-    if found:
-        return found
+    if found and os.environ.get("SKILLBREW_CLAUDE_BIN_OK", "1") != "0":
+        # 若 claude 在 PATH 上但其实是 Coze SDK 里的代理壳子（``claude mcp get`` 会 hang），
+        # 可通过 SKILLBREW_CLAUDE_BIN_OK=0 强制退回 JSON merge fallback。
+        try:
+            probe = subprocess.run(
+                [found, "mcp", "list"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if probe.returncode == 0:
+                return found
+            # returncode 非 0 或超时 → 当成不可用，继续探测 fallback
+        except (subprocess.TimeoutExpired, OSError):
+            pass
     exec_env = os.environ.get("CLAUDE_CODE_EXECPATH")
     if exec_env and os.access(exec_env, os.X_OK):
-        return exec_env
+        # 同样 probe 一下：若 claude mcp list 超时/非零返回，当成不可用，继续走 fallback
+        try:
+            probe = subprocess.run(
+                [exec_env, "mcp", "list"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if probe.returncode == 0:
+                return exec_env
+        except (subprocess.TimeoutExpired, OSError):
+            pass
     # 探测 Coze / Claude Code 打包路径（按当前平台取对应二进制）
     bridge = Path.home() / ".coze" / "bridge" / "lib" / "node_modules"
     import platform
@@ -231,11 +252,27 @@ def claude_bin() -> str | None:
         platform_tag = "linux-arm64"
     bundled = bridge / f"@anthropic-ai" / f"claude-agent-sdk-{platform_tag}" / "claude"
     if bundled.exists() and os.access(bundled, os.X_OK):
-        return str(bundled)
-    # 兜底：通配列出所有 claude-agent-sdk-* 目录，取第一个可执行文件
+        try:
+            probe = subprocess.run(
+                [str(bundled), "mcp", "list"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if probe.returncode == 0:
+                return str(bundled)
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+    # 兜底：通配列出所有 claude-agent-sdk-* 目录，对每个可执行文件 probe
     for candidate in sorted((bridge / "@anthropic-ai").glob("claude-agent-sdk-*/claude")):
         if os.access(candidate, os.X_OK):
-            return str(candidate)
+            try:
+                probe = subprocess.run(
+                    [str(candidate), "mcp", "list"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if probe.returncode == 0:
+                    return str(candidate)
+            except (subprocess.TimeoutExpired, OSError):
+                continue
     return None
 
 

@@ -57,7 +57,7 @@ class McpEntry:
     verified: bool = True
 
 
-# ---- 人工核实的标准 MCP 目录（5 条；memos 无官方包，故意不收录 → unresolved） ----
+# ---- 人工核实的标准 MCP 目录（6 条；memos 无官方包，故意不收录 → unresolved） ----
 CATALOG: dict[str, McpEntry] = {
     "playwright": McpEntry(
         name="playwright",
@@ -121,6 +121,20 @@ CATALOG: dict[str, McpEntry] = {
             "必须在环境配 GITHUB_PERSONAL_ACCESS_TOKEN（GitHub PAT），否则装了调不通",
         ),
         invoke_hint="读 issue/PR/commit、理解协作上下文，基于 issue 改代码、总结变更、备 PR",
+    ),
+    "sqlite": McpEntry(
+        name="sqlite",
+        command="uvx",
+        args=("mcp-server-sqlite", "--db-path", "<DB_PATH>"),
+        aliases=("sqlite mcp", "mcp-server-sqlite", "sqlite server"),
+        repo="modelcontextprotocol/servers",
+        url="https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite",
+        needs_config=True,
+        post_install_steps=(
+            "args 里的 <DB_PATH> 必须替换为要访问的 .db 文件真实路径，默认占位待改；"
+            "首次调用会通过 uvx 自动拉取 mcp-server-sqlite（需装 uv，pip install uv）",
+        ),
+        invoke_hint="让 Claude 直接查询 SQLite 数据库：跑 SELECT、理解表结构、做数据分析",
     ),
     # memos 故意不收录：字幕里的「memos」无官方 MCP 包。verify 会把它放进 unresolved[]，
     # 候选指向官方 @modelcontextprotocol/server-memory（知识图谱记忆），交用户定夺。
