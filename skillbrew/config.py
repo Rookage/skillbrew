@@ -299,6 +299,32 @@ def repo_clones_dir() -> Path:
     return Path.home() / ".claude" / "clones"
 
 
+# ---- D23 通用安装器：本地缓存 + 终端探测 ----
+
+def install_cache_path() -> Path:
+    """返回 D23 通用安装器的本地缓存文件 ``data/install_cache.json``。
+
+    缓存「验证过的装法」（D23 四级降级链第 1 级：命中即用、不问 AI）。随 ``data/``
+    自动 gitignore（仓库根 ``data/`` 已在 ``.gitignore``）。D14 卫生：缓存只存环境
+    变量**名**、不存**值**（值恒空串），详见 ``installer.cache_store`` 的卫生器。
+
+    与 ``data_dir`` 同源（项目根 ``data/``，非运行时相关），故不提供 env 覆盖——
+    它是项目本地数据，不是运行时配置落点（区别于 ``skills_dir``/``claude_json_path``
+    那类需随 Claude/Codex 运行时切换的路径）。
+    """
+    return project_root() / "data" / "install_cache.json"
+
+
+def has_tty() -> bool:
+    """当前进程是否挂在交互终端上（决定缺项补全走 ``input()`` 还是写报告）。
+
+    headless 环境（如本 Coze 运行时 stdin 被重定向/管道）返回 False，``prompt_missing``
+    降级为「把缺项清单写进报告、由 agent 在对话里转达用户」，**绝不卡死、绝不抛裸异常**。
+    单独提函数（而非各处直接 ``sys.stdin.isatty()``）是为了测试里能 monkeypatch。
+    """
+    return bool(sys.stdin.isatty())
+
+
 # ---- 终端编码兜底（Windows GBK 防 print 崩，issue #5）----
 
 def ensure_utf8_stdout() -> None:

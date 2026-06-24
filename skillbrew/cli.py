@@ -554,10 +554,16 @@ def cmd_install(args: argparse.Namespace) -> int:
         else:
             print(f"   [{i + 1}/{n}] 装 {head}/{s['name']}（整目录拷）...", flush=True)
 
+    # D23：仅 --ai-infer 才注入 chat_fn（DeepSeek），让 install() 对 unresolved MCP 推断装法。
+    # 默认关 → install() 纯查表，零行为改变（回归安全）。prompt_fn=None：交互终端走 input()，无终端写进报告。
+    chat_fn = (lambda p: llm.chat_text(cfg, p)) if args.ai_infer else None
+
     try:
         r = install_mod.install(
             src, target_dir=args.target_dir, approve=args.approve,
             include_deprecated=args.include_deprecated, on_progress=on_progress,
+            ai_infer=args.ai_infer, no_trial=args.no_trial, refresh_cache=args.refresh_cache,
+            chat_fn=chat_fn, prompt_fn=None,
         )
     except Exception as e:  # noqa: BLE001
         print(f"[FAIL] 安装失败：{e}")
@@ -601,6 +607,11 @@ def cmd_install(args: argparse.Namespace) -> int:
         print(f"unresolved（待你拍板，不自动包装）：{len(unresolved)} 个")
         for u in unresolved:
             print(f"  · {u.get('name')}：{u.get('reason')}（候选：{u.get('candidate', '')}）")
+    resolve_traces = r.get("resolve_traces") or []
+    if resolve_traces:
+        print(f"\nAI 推断明细（resolve trace）：{len(resolve_traces)} 条")
+        for t in resolve_traces:
+            print(f"  · {t}")
     if args.approve:
         installed = r.get("installed", [])
         print(f"\n✅ 已落盘 {len(installed)} 个能力，安装后 distinct：{r.get('after')}")
@@ -820,6 +831,18 @@ def main(argv: list[str] | None = None) -> int:
         "--include-deprecated", action="store_true", help="连 deprecated skill 一起装（默认跳过）",
     )
     p_inst.add_argument("--target-dir", default=None, help="安装目标目录（默认运行时默认 Skill 目录）")
+    p_inst.add_argument(
+        "--ai-infer", action="store_true",
+        help="对 verify 标 unresolved 的 MCP，开 AI 读源头仓库推断装法+试跑验证+缺项补全（D23，默认关）",
+    )
+    p_inst.add_argument(
+        "--no-trial", action="store_true",
+        help="跳过装前试跑（推断后不验证直接装，未验证不入缓存）",
+    )
+    p_inst.add_argument(
+        "--refresh-cache", action="store_true",
+        help="忽略本地缓存重新推断装法（强刷已缓存的装法）",
+    )
     p_inst.set_defaults(func=cmd_install)
 
     p_rec = sub.add_parser(

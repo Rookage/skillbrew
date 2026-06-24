@@ -46,6 +46,7 @@ import urllib.request
 from pathlib import Path
 
 from . import config
+from . import installer
 from . import registry
 from .recommend import V_WORTH
 from .verify import parse_frontmatter  # 复用 SKILL.md frontmatter 轻量解析
@@ -859,12 +860,15 @@ def install(
     source_dir: Path, *, target_dir: Path | str | None = None,
     db_path: Path | str | None = None, approve: bool = False,
     include_deprecated: bool = False, on_progress=None,
+    ai_infer: bool = False, no_trial: bool = False, refresh_cache: bool = False,
+    chat_fn=None, prompt_fn=None,
 ) -> dict:
     """对一个源目录跑安装：读 install_list.json + dedup.json → 挑 new 按形态分发 → 登记台账。
 
     approve=False（默认）= dry-run，只返回计划（to_install/items_detail/skipped_*/unresolved），
     不下载、不注册、不写台账。approve=True = 真装（Skill 整目录拷 / MCP 注册）+ upsert 台账 + 记会话。
-    返回报告 dict。纯 GitHub raw + 标准库 + claude CLI，不调 LLM。
+    返回报告 dict。默认纯查表（GitHub raw + 标准库 + claude CLI，不调 LLM）；仅 ai_infer 开时
+    才对 verify 标 unresolved 的 MCP 跑「AI 推断装法 → 试跑验证 → 缺项补全」（D23）。
     target_dir 仅对 Skill 形态有意义（默认 ~/.claude/skills）；MCP 注册到 ~/.claude.json。
     """
     source_dir = Path(source_dir)
@@ -918,6 +922,47 @@ def install(
     target = Path(target_dir) if target_dir else config.skills_dir()
     before = dedup_report.get("baseline", {}).get("counts", {}).get("distinct", 0)
 
+    # D23 通用安装器 resolve-pass：对 verify 标 unresolved 的 MCP 尝试推断装法。
+    # 仅 ai_infer 开启时整体跑（默认关 → unresolved 原样透传，零行为改变，回归安全）。
+    # 成功 → spec_to_item 造 item 接进 by_name+to_install 并移出 unresolved；失败 → 留 unresolved+写 trace，不崩。
+    unresolved = list(install_list.get("unresolved") or dedup_report.get("unresolved", []))
+    resolve_traces: list[str] = []
+    if ai_infer and unresolved:
+        for u in list(unresolved):  # 边遍历边改原列表 → 用副本迭代
+            name = u.get("name") or ""
+            if not name:
+                continue
+            try:
+                rr = installer.resolve_install_spec(
+                    name, repo=u.get("repo"), url=u.get("url"),
+                    allow_ai=ai_infer, skip_trial=no_trial, refresh_cache=refresh_cache,
+                    has_tty=config.has_tty(), chat_fn=chat_fn, prompt_fn=prompt_fn,
+                )
+            except Exception as e:  # noqa: BLE001 —— 任何级失败都不崩，绝不中断安装
+                resolve_traces.append(f"[{name}] resolve 异常（留 unresolved）：{e}")
+                continue
+            for t in (rr.trace or []):
+                resolve_traces.append(f"[{name}] {t}")
+            if rr.ok and rr.spec is not None:
+                # 关键：把 prompt 补全的凭证写回 os.environ，供下游
+                # _credentials_configured / _inject_env 取到（否则会被误判「凭证未配」跳过真装）。
+                for var, val in (rr.filled or {}).items():
+                    os.environ[var] = val
+                item = installer.spec_to_item(rr.spec, source_ref=u.get("source_ref"))
+                by_name[name] = item
+                to_install.append({"name": name, "form": "MCP", "category": "new"})
+                unresolved = [x for x in unresolved if x.get("name") != name]
+                resolve_traces.append(
+                    f"[{name}] resolve 成功：provenance={rr.provenance}，已纳入安装计划"
+                )
+            else:
+                # 失败：留 unresolved。把卡点原因/缺项写进条目，报告透明（D22 反盲盒）。
+                if rr.reason:
+                    resolve_traces.append(f"[{name}] resolve 未通过：{rr.reason}")
+                    u["reason"] = rr.reason
+                if rr.missing:
+                    u["missing"] = list(rr.missing)
+
     # dry-run 计划的 per-item 明细（形态/usability/凭证，反黑箱 D22）
     items_detail: list[dict] = []
     for d in to_install:
@@ -960,7 +1005,8 @@ def install(
         "skipped_already": [d["name"] for d in skipped_already],
         "skipped_not_approved": [d["name"] for d in skipped_not_approved],
         "recommend_present": recommend_present,
-        "unresolved": install_list.get("unresolved") or dedup_report.get("unresolved", []),
+        "unresolved": unresolved,
+        "resolve_traces": resolve_traces,
     }
 
     if not approve:
