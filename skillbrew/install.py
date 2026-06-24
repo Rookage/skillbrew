@@ -927,6 +927,11 @@ def install(
     # 成功 → spec_to_item 造 item 接进 by_name+to_install 并移出 unresolved；失败 → 留 unresolved+写 trace，不崩。
     unresolved = list(install_list.get("unresolved") or dedup_report.get("unresolved", []))
     resolve_traces: list[str] = []
+    # D23: 收集每项 provenance/trace/missing，写 resolve_trace.json sidecar 供 record.py 展示（D22 反盲盒）
+    resolve_meta: dict[str, dict] = {}
+    # 预置项（install_list 已有，来自 catalog/缓存）：provenance 统一标 catalog
+    for name in by_name:
+        resolve_meta[name] = {"provenance": "catalog", "trace": [], "missing": []}
     if ai_infer and unresolved:
         for u in list(unresolved):  # 边遍历边改原列表 → 用副本迭代
             name = u.get("name") or ""
@@ -952,6 +957,11 @@ def install(
                 by_name[name] = item
                 to_install.append({"name": name, "form": "MCP", "category": "new"})
                 unresolved = [x for x in unresolved if x.get("name") != name]
+                resolve_meta[name] = {
+                    "provenance": rr.provenance,
+                    "trace": list(rr.trace or []),
+                    "missing": list(rr.missing or []),
+                }
                 resolve_traces.append(
                     f"[{name}] resolve 成功：provenance={rr.provenance}，已纳入安装计划"
                 )
@@ -962,6 +972,19 @@ def install(
                     u["reason"] = rr.reason
                 if rr.missing:
                     u["missing"] = list(rr.missing)
+
+    # D23: 把仍未解决的项也记入 resolve_meta，供 record.py 展示「未解析」小节
+    for u in unresolved:
+        name = u.get("name") or ""
+        if name:
+            resolve_meta[name] = {
+                "provenance": "unresolved",
+                "trace": [],
+                "missing": list(u.get("missing", [])),
+                "reason": u.get("reason", ""),
+            }
+    # 写 sidecar 文件，record.py 读取后展示装法来源列 + unresolved 小节
+    _write_resolve_trace(source_dir, resolve_meta, unresolved)
 
     # dry-run 计划的 per-item 明细（形态/usability/凭证，反黑箱 D22）
     items_detail: list[dict] = []
@@ -1167,6 +1190,21 @@ def format_plan_text(r: dict) -> str:
         names = [u.get("name") for u in r["unresolved"]]
         lines.append(f"unresolved（catalog miss，待定夺，不自动包装）：{names}")
     return "\n".join(lines)
+
+
+def _write_resolve_trace(
+    source_dir: Path, resolve_meta: dict[str, dict], unresolved: list[dict]
+) -> None:
+    """写 resolve_trace.json sidecar：每项 provenance/trace/missing + unresolved 列表。
+
+    record.py 的 _gather 读取后，在 D22 反盲盒表格中展示「装法来源」列 + unresolved 小节。
+    """
+    rt = {
+        "items": resolve_meta,
+        "unresolved": unresolved,
+    }
+    rt_path = source_dir / "resolve_trace.json"
+    rt_path.write_text(json.dumps(rt, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 # ---- 直接运行：python -m skillbrew.install <源目录> [--approve] ----

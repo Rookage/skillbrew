@@ -205,3 +205,31 @@ def test_ai_infer_resolve_exception_does_not_crash(tmp_path, monkeypatch):
     assert "ghost-mcp" in [u.get("name") for u in plan["unresolved"]]
     assert "ghost-mcp" not in plan["to_install"]
     assert any("异常" in t and "ghost-mcp" in t for t in plan["resolve_traces"])
+
+
+# ---------------------------------------------------------------------------
+# ⑤ _write_resolve_trace sidecar 落盘验证
+# ---------------------------------------------------------------------------
+
+def test_write_resolve_trace_sidecar(tmp_path):
+    """_write_resolve_trace 写 resolve_trace.json，结构正确、可回读。"""
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    resolve_meta = {
+        "a": {"provenance": "cached", "trace": ["L1 缓存命中"], "missing": []},
+        "b": {"provenance": "ai", "trace": ["L3 AI 推断"], "missing": ["KEY_X"]},
+    }
+    unresolved = [
+        {"name": "ghost", "reason": "试跑失败", "missing": ["API_KEY"]},
+    ]
+    install_mod._write_resolve_trace(source_dir, resolve_meta, unresolved)
+
+    rt_path = source_dir / "resolve_trace.json"
+    assert rt_path.exists(), "resolve_trace.json 应已写入"
+    rt = json.loads(rt_path.read_text(encoding="utf-8"))
+    assert rt["items"] == resolve_meta
+    assert rt["unresolved"] == unresolved
+    # 验证个体字段
+    assert rt["items"]["a"]["provenance"] == "cached"
+    assert rt["items"]["b"]["trace"] == ["L3 AI 推断"]
+    assert rt["unresolved"][0]["name"] == "ghost"

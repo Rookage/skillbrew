@@ -75,6 +75,10 @@ def _gather(source_dir: Path, skill_dirs: list[Path], db_path) -> dict:
     rec_path = source_dir / "recommend.json"
     rec = json.loads(rec_path.read_text(encoding="utf-8")) if rec_path.exists() else None
 
+    # D23: resolve-pass 的 provenance/trace/missing（install.py 写入的 sidecar）
+    rt_path = source_dir / "resolve_trace.json"
+    resolve_trace = json.loads(rt_path.read_text(encoding="utf-8")) if rt_path.exists() else None
+
     repo = il.get("verified_repo", {})
 
     # plan.json 一手留痕：OCR 纠错叙事、溯源说明、corrections（替代硬编码仓库名/星数）
@@ -165,7 +169,7 @@ def _gather(source_dir: Path, skill_dirs: list[Path], db_path) -> dict:
         "summary": dd.get("summary", {}), "skill_dirs": skill_dirs,
         "plan": plan, "ocr_note": ocr_note,
         "verify_how": verify_how, "verify_corrections": verify_corrections,
-        "recommend": rec,
+        "recommend": rec, "resolve_trace": resolve_trace,
     }
 
 
@@ -300,6 +304,17 @@ def _rollback_repo_lines(names: list[str]) -> list[str]:
     return lines
 
 
+def _provenance_label(p: str) -> str:
+    """装法来源中文映射（D23 反盲盒）。"""
+    return {
+        "cached": "缓存命中",
+        "catalog": "catalog 种子",
+        "ai": "AI 推断（已验证）",
+        "ai_unverified": "AI 推断（未验证）",
+        "unresolved": "未解析",
+    }.get(p, p or "未知")
+
+
 def _d22_invoke_section(g: dict, *, heading: str) -> list[str]:
     """D22 反盲盒·透明可追：本次（待）落盘的能力逐个说清「是什么 / 怎么调用 / 装完前必做」——
     @名 + description（MCP 取 invoke_hint/capability_name）里的触发提示词 + 调用机制 + 装完前必做
@@ -312,43 +327,72 @@ def _d22_invoke_section(g: dict, *, heading: str) -> list[str]:
     rec = g.get("recommend")
     by_name = g["by_name"]
     reg = g["reg_active_by_name"]
+    rt = g.get("resolve_trace") or {}
+    rt_items = rt.get("items", {})
 
     out.append(heading)
-    if not inst:
+
+    # D23: unresolved 小节——无论有无 new_installed，都应展示哪些能力暂未纳入（反盲盒透明）
+    unresolved = rt.get("unresolved") or g.get("il", {}).get("unresolved", [])
+
+    if not inst and not unresolved:
         out.append("（本批无 new 能力候选，无可调用项。）")
         out.append("")
         return out
 
-    if really:
-        out.append("本次落盘的能力**装完就能用**——下表逐个说清「怎么唤起 / 怎么调用 / 装完前必做」，"
-                   "装了一堆也不会「不知道怎么调」（D22 反盲盒 / R1 痛点 MVP 桥接）。")
+    if inst:
+        if really:
+            out.append("本次落盘的能力**装完就能用**——下表逐个说清「怎么唤起 / 怎么调用 / 装完前必做」，"
+                       "装了一堆也不会「不知道怎么调」（D22 反盲盒 / R1 痛点 MVP 桥接）。")
+        else:
+            out.append("本次 dry-run（未 `--approve`）**未落盘**——但仍逐个列出每个候选的"
+                       "「怎么唤起 / 怎么调用 / **装完前必做**」（D22 反盲盒：装之前就看清哪些要配凭证/改配置/首跑下载，"
+                       "而不是装完才发现调不通）。`--approve` 真正装上后此表即已装清单。")
+        out.append("")
+        out.append("| # | @名 | 形态 | 装法来源 | 触发提示词（怎么唤起它） | 怎么调用（机制） | 装完前必做 |")
+        out.append("|---|-----|------|----------|--------------------------|------------------|------------|")
+        for i, d in enumerate(inst, 1):
+            name = d["name"]
+            s = by_name.get(name, {})
+            r = reg.get(name, {})
+            disp = s.get("display_name") or r.get("display_name") or name
+            form = r.get("form") or s.get("form") or d.get("form") or "Skill"
+            trig_src = s.get("description") or s.get("invoke_hint") or s.get("capability_name") or ""
+            prereq = _prereq_text(s)
+            meta = rt_items.get(name, {})
+            prov = _provenance_label(meta.get("provenance", ""))
+            out.append(f"| {i} | `{disp}` | {form} | {prov} | {_trigger(trig_src)} "
+                       f"| {_invoke_hint(disp, form)} | {prereq} |")
+        out.append("")
+        out.append("> **调用方式速记**：Skill 形态的能力，Claude Code 在任务相关时按每个技能 frontmatter "
+                   "的 `description` 自动加载（无需手输 `@`）；想强制用某个，直接说『使用 `<名>` 技能』。"
+                   "「触发提示词」列即每个技能 description 里的 `Use when…` 条件——满足时自动唤起。"
+                   "MCP 形态配进 `~/.claude.json` 后自动暴露工具，模型按需调；「装完前必做」列点明凭证/配置/首跑。"
+                   "repo（克隆即用）形态 clone 到 `~/.claude/clones/` 后，`cd` 进去按其 README 装依赖+配置+运行；"
+                   "本工具只负责克隆+装依赖，真跑还得配齐凭证/运行时，见「装完前必做」列。")
+        if rec:
+            out.append(f"> 注：install 实装 `approved` 子集（D20 挑着买，{len(rec.get('approved', []))} 个）；"
+                       f"上表按 §1 口径列全量 new 候选，供逐个查调用方式与前置。")
     else:
-        out.append("本次 dry-run（未 `--approve`）**未落盘**——但仍逐个列出每个候选的"
-                   "「怎么唤起 / 怎么调用 / **装完前必做**」（D22 反盲盒：装之前就看清哪些要配凭证/改配置/首跑下载，"
-                   "而不是装完才发现调不通）。`--approve` 真正装上后此表即已装清单。")
-    out.append("")
-    out.append("| # | @名 | 形态 | 触发提示词（怎么唤起它） | 怎么调用（机制） | 装完前必做 |")
-    out.append("|---|-----|------|--------------------------|------------------|------------|")
-    for i, d in enumerate(inst, 1):
-        name = d["name"]
-        s = by_name.get(name, {})
-        r = reg.get(name, {})
-        disp = s.get("display_name") or r.get("display_name") or name
-        form = r.get("form") or s.get("form") or d.get("form") or "Skill"
-        trig_src = s.get("description") or s.get("invoke_hint") or s.get("capability_name") or ""
-        prereq = _prereq_text(s)
-        out.append(f"| {i} | `{disp}` | {form} | {_trigger(trig_src)} "
-                   f"| {_invoke_hint(disp, form)} | {prereq} |")
-    out.append("")
-    out.append("> **调用方式速记**：Skill 形态的能力，Claude Code 在任务相关时按每个技能 frontmatter "
-               "的 `description` 自动加载（无需手输 `@`）；想强制用某个，直接说『使用 `<名>` 技能』。"
-               "「触发提示词」列即每个技能 description 里的 `Use when…` 条件——满足时自动唤起。"
-               "MCP 形态配进 `~/.claude.json` 后自动暴露工具，模型按需调；「装完前必做」列点明凭证/配置/首跑。"
-               "repo（克隆即用）形态 clone 到 `~/.claude/clones/` 后，`cd` 进去按其 README 装依赖+配置+运行；"
-               "本工具只负责克隆+装依赖，真跑还得配齐凭证/运行时，见「装完前必做」列。")
-    if rec:
-        out.append(f"> 注：install 实装 `approved` 子集（D20 挑着买，{len(rec.get('approved', []))} 个）；"
-                   f"上表按 §1 口径列全量 new 候选，供逐个查调用方式与前置。")
+        out.append("（本批无 new 能力候选，无可调用项。）")
+        out.append("")
+
+    # D23: unresolved 小节——哪些能力因缺信息/凭证/装法暂未纳入安装计划
+    if unresolved:
+        out.append("")
+        out.append("### 未解析 (unresolved) —— 暂未纳入安装计划")
+        out.append("")
+        out.append("以下能力因缺少装法信息或凭证，本次**未安装**。补齐缺失项后重新跑 `verify` 再装：")
+        out.append("")
+        out.append("| 名 | 卡点原因 | 缺失项 |")
+        out.append("|-----|----------|--------|")
+        for u in unresolved:
+            name = u.get("name") or "?"
+            reason = u.get("reason") or "装法未知（catalog 无此条目，AI 推断也未能确定装法）"
+            missing = u.get("missing") or []
+            missing_str = "、".join(f"`{m}`" for m in missing) if missing else "—"
+            out.append(f"| `{name}` | {reason} | {missing_str} |")
+        out.append("")
     out.append("")
     return out
 
