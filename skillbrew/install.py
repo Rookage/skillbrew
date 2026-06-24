@@ -954,10 +954,11 @@ def install(
                 for var, val in (rr.filled or {}).items():
                     os.environ[var] = val
                 item = installer.spec_to_item(rr.spec, source_ref=u.get("source_ref"))
-                by_name[name] = item
-                to_install.append({"name": name, "form": "MCP", "category": "new"})
+                sanitized_name = item["name"]
+                by_name[sanitized_name] = item
+                to_install.append({"name": sanitized_name, "form": "MCP", "category": "new"})
                 unresolved = [x for x in unresolved if x.get("name") != name]
-                resolve_meta[name] = {
+                resolve_meta[sanitized_name] = {
                     "provenance": rr.provenance,
                     "trace": list(rr.trace or []),
                     "missing": list(rr.missing or []),

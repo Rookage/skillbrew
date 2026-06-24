@@ -114,7 +114,7 @@ def _gh_cli_fallback(url: str) -> dict:
             # /repos/{owner}/{repo}
             result = subprocess.run(
                 ["gh", "repo", "view", f"{owner}/{repo}", "--json",
-                 "full_name,html_url,stargazersCount,defaultBranch,description,pushedAt"],
+                 "nameWithOwner,url,stargazerCount,defaultBranchRef,description,pushedAt"],
                 capture_output=True,
                 text=True,
                 timeout=_TIMEOUT
@@ -125,13 +125,18 @@ def _gh_cli_fallback(url: str) -> dict:
 
         data = json.loads(result.stdout)
 
-        # 统一字段名（gh repo view 和 gh api 返回的字段名不同）
-        if "stargazersCount" in data:
-            data["stargazers_count"] = data.pop("stargazersCount")
-        if "defaultBranch" in data:
-            data["default_branch"] = data.pop("defaultBranch")
-        if "full_name" not in data:
-            data["full_name"] = f"{owner}/{repo}"
+        # 统一字段名（gh repo view 使用 GraphQL 风格字段名，转回 REST API 风格）
+        if "nameWithOwner" in data:
+            data["full_name"] = data.pop("nameWithOwner")
+        if "url" in data:
+            data["html_url"] = data.pop("url")
+        if "stargazerCount" in data:
+            data["stargazers_count"] = data.pop("stargazerCount")
+        if "defaultBranchRef" in data and isinstance(data["defaultBranchRef"], dict):
+            data["default_branch"] = data["defaultBranchRef"]["name"]
+            del data["defaultBranchRef"]
+        if "pushedAt" in data:
+            data["pushed_at"] = data.pop("pushedAt")
 
         return data
 

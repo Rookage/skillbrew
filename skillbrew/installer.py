@@ -683,6 +683,8 @@ def _spec_from_ai_dict(
     if not isinstance(d, dict):
         raise ValueError("AI 输出不是 JSON 对象")
     name = str(d.get("name") or "").strip()
+    # 消毒：MCP 名字只能含字母/数字/连字符/下划线，/ 换为 -
+    name = re.sub(r"[^a-zA-Z0-9_-]", "-", name)
     command = str(d.get("command") or "").strip()
     if not name or not command:
         raise ValueError(
