@@ -161,3 +161,166 @@ def test_from_catalog_entry_marks_preverified_seed():
         assert spec.verify_ok is True
         assert spec.missing == []
         assert spec.trace  # 非空，留了溯源说明
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# D23 Step 6: group_mcp_items miss 分支补 repo/url + 空 command 守卫
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def test_miss_branch_adds_repo_from_url():
+    """① unresolved 条目从 traced_source.url 抠出 repo/url（_ts_repo 匹配 github URL）。"""
+    plan = {
+        "traced_sources": [
+            {"name": "some-tool", "url": "https://github.com/ghost/ghost-mcp"},
+        ],
+        "capabilities": [
+            {"form": "MCP", "source_ref": "1", "name": "幽灵工具"},
+        ],
+    }
+    items, unresolved = verify.group_mcp_items(plan)
+    assert items == []
+    assert len(unresolved) == 1
+    u = unresolved[0]
+    assert u["name"] == "some-tool"
+    assert u["repo"] == "ghost/ghost-mcp"
+    assert u["url"] == "https://github.com/ghost/ghost-mcp"
+
+
+def test_miss_branch_adds_repo_from_name():
+    """② unresolved 条目从 traced_source.name 的 owner/repo 写法抠出 repo/url。"""
+    plan = {
+        "traced_sources": [
+            {"name": "shadow/shadow-mcp"},
+        ],
+        "capabilities": [
+            {"form": "MCP", "source_ref": "1", "name": "影子工具"},
+        ],
+    }
+    items, unresolved = verify.group_mcp_items(plan)
+    assert items == []
+    assert len(unresolved) == 1
+    u = unresolved[0]
+    assert u["name"] == "shadow/shadow-mcp"
+    assert u["repo"] == "shadow/shadow-mcp"
+    assert u["url"] == "https://github.com/shadow/shadow-mcp"
+
+
+def test_miss_branch_no_repo_when_no_github():
+    """③ traced_source 无 github URL 也无 owner/repo 写法 → repo/url 不出现。"""
+    plan = {
+        "traced_sources": [
+            {"name": "random text without github"},
+        ],
+        "capabilities": [
+            {"form": "MCP", "source_ref": "1", "name": "未知来源"},
+        ],
+    }
+    items, unresolved = verify.group_mcp_items(plan)
+    assert items == []
+    assert len(unresolved) == 1
+    u = unresolved[0]
+    assert u["name"] == "random text without github"
+    assert "repo" not in u
+    assert "url" not in u
+
+
+def test_miss_branch_no_repo_when_idx_out_of_bounds():
+    """④ source_ref 越界 → 不崩，不补 repo/url（防御）。"""
+    plan = {
+        "traced_sources": [],
+        "capabilities": [
+            {"form": "MCP", "source_ref": "99", "name": "越界引用"},
+        ],
+    }
+    items, unresolved = verify.group_mcp_items(plan)
+    assert items == []
+    assert len(unresolved) == 1
+    u = unresolved[0]
+    assert u["name"] == "越界引用"
+    assert "repo" not in u
+
+
+def test_miss_branch_no_repo_when_source_ref_none():
+    """⑤ source_ref 为 None → 不崩，不补 repo/url（防御）。"""
+    plan = {
+        "traced_sources": [{"name": "o/r"}],
+        "capabilities": [
+            {"form": "MCP", "source_ref": None, "name": "无引用"},
+        ],
+    }
+    items, unresolved = verify.group_mcp_items(plan)
+    assert items == []
+    assert len(unresolved) == 1
+    u = unresolved[0]
+    assert u["name"] == "无引用"
+    assert "repo" not in u
+
+
+def test_empty_command_goes_to_unresolved():
+    """⑥ 防御：catalog 条目 command 为空 → 进 unresolved 而非产出无效 item。"""
+    import dataclasses
+    from skillbrew.mcp_catalog import McpEntry
+
+    # 造一个 command 为空的假条目
+    bogus = McpEntry(
+        name="bogus-mcp", command="", args=(), invoke_hint="",
+        repo="o/bogus", url="https://github.com/o/bogus",
+    )
+    catalog = mcp_catalog  # 复用真 catalog 的 lookup/suggest_candidate
+    # 构造一个 catalog 对象，让 lookup 返回 bogus 条目
+    # 最简单做法：monkeypatch lookup 直接返回 bogus
+    import unittest.mock as mock
+    with mock.patch.object(mcp_catalog, "lookup", return_value=bogus):
+        plan = {
+            "traced_sources": [{"name": "bogus-mcp"}],
+            "capabilities": [
+                {"form": "MCP", "source_ref": "1", "name": "假条目"},
+            ],
+        }
+        items, unresolved = verify.group_mcp_items(plan)
+    assert items == []
+    assert len(unresolved) == 1
+    u = unresolved[0]
+    assert u["name"] == "bogus-mcp"
+    assert "command 为空" in u["reason"]
+    assert u["repo"] == "o/bogus"
+    assert u["url"] == "https://github.com/o/bogus"
+
+
+def test_all_catalog_entries_hit_with_command():
+    """⑦ 回归：6 条 catalog 条目 command 均非空，全部命中不进 unresolved。"""
+    plan = _plan_with_all_catalog_entries()
+    items, unresolved = verify.group_mcp_items(plan)
+    assert len(items) == 6
+    assert unresolved == []
+    for item in items:
+        assert item["mcp"]["command"], f"{item['name']} command 不应为空"
+
+
+def test_miss_branch_multiple_entries_mixed():
+    """⑧ 混合场景：一条命中 + 一条 miss（有 repo）+ 一条 miss（无 repo）。"""
+    plan = {
+        "traced_sources": [
+            {"name": "sequential-thinking"},                # catalog 命中
+            {"name": "ghost/ghost-mcp"},                    # miss，有 owner/repo
+            {"name": "vague description without github"},   # miss，无 repo
+        ],
+        "capabilities": [
+            {"form": "MCP", "source_ref": "1", "name": "顺序思考"},
+            {"form": "MCP", "source_ref": "2", "name": "幽灵"},
+            {"form": "MCP", "source_ref": "3", "name": "模糊"},
+        ],
+    }
+    items, unresolved = verify.group_mcp_items(plan)
+    assert len(items) == 1
+    assert items[0]["name"] == "sequential-thinking"
+    assert len(unresolved) == 2
+    # 第一条 unresolved：有 repo
+    u1 = next(u for u in unresolved if u["name"] == "ghost/ghost-mcp")
+    assert u1["repo"] == "ghost/ghost-mcp"
+    assert u1["url"] == "https://github.com/ghost/ghost-mcp"
+    # 第二条 unresolved：无 repo
+    u2 = next(u for u in unresolved if u["name"] == "vague description without github")
+    assert "repo" not in u2
+    assert "url" not in u2

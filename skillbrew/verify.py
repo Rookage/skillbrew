@@ -277,6 +277,7 @@ def group_mcp_items(
             continue
         source_ref = cap.get("source_ref")
         raw_name = ""
+        idx = -1
         if source_ref is not None:
             try:
                 idx = int(source_ref) - 1
@@ -287,12 +288,30 @@ def group_mcp_items(
         entry = catalog.lookup(raw_name) if raw_name else None
         if entry is None:
             hint = catalog.suggest_candidate(raw_name) if raw_name else None
-            unresolved.append({
+            unresolved_entry: dict = {
                 "name": raw_name or cap.get("name", ""),
                 "reason": hint["reason"] if hint else
                     "mcp_catalog 未收录：无官方标准 MCP 包，或名称需人工核实（不臆造包装）",
                 "candidate": hint["candidate"] if hint else None,
                 "source_ref": source_ref,
+            }
+            # D23: 从 traced_source 抠 repo/url，给 AI 推断当源头（纯查表，不破 D18）
+            if 0 <= idx < len(traced):
+                owner_repo = _ts_repo(traced[idx])
+                if owner_repo:
+                    unresolved_entry["repo"] = f"{owner_repo[0]}/{owner_repo[1]}"
+                    unresolved_entry["url"] = f"https://github.com/{owner_repo[0]}/{owner_repo[1]}"
+            unresolved.append(unresolved_entry)
+            continue
+        # 防御：catalog 条目 command 为空时当 unresolved 处理（不产出无效 item）
+        if not entry.command:
+            unresolved.append({
+                "name": entry.name,
+                "reason": "catalog 条目 command 为空，无法安装",
+                "candidate": None,
+                "source_ref": source_ref,
+                "repo": entry.repo,
+                "url": entry.url,
             })
             continue
         items.append({
