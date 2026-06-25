@@ -181,12 +181,21 @@ def test_section_unresolved_subsection():
 
 
 def test_section_unresolved_fallback_il():
-    """⑭ resolve_trace 无 unresolved 但 il 有 → 从 il.unresolved 兜底取。"""
-    g = _fake_g(installed=["a"], sessions=[{"id": 1}], resolve_trace={"items": {}, "unresolved": []})
+    """⑭ resolve_trace 无 unresolved 键（旧数据/--ai-infer 未开）→ 从 il.unresolved 兜底取。"""
+    g = _fake_g(installed=["a"], sessions=[{"id": 1}], resolve_trace={"items": {}})
     g["il"] = {"unresolved": [{"name": "fallback", "reason": "兜底", "missing": ["X"]}]}
     out = "\n".join(R._d22_invoke_section(g, heading="## 8. 怎么调用\n"))
     assert "未解析" in out and "fallback" in out, "应从 il.unresolved 兜底取"
     print("  [14] unresolved 从 il 兜底：✓")
+
+
+def test_section_empty_unresolved_no_fallback():
+    """⑭b resolve_trace 有 unresolved:[]（全解析完）→ 不应从 il 兜底，应不追加未解析小节。"""
+    g = _fake_g(installed=["a"], sessions=[{"id": 1}], resolve_trace={"items": {"a": {"provenance": "ai", "trace": [], "missing": []}}, "unresolved": []})
+    g["il"] = {"unresolved": [{"name": "should-not-show", "reason": "不应出现", "missing": ["X"]}]}
+    out = "\n".join(R._d22_invoke_section(g, heading="## 8. 怎么调用\n"))
+    assert "未解析" not in out, "全解析完不应出现未解析小节，也不应从 il 兜底"
+    print("  [14b] 全解析完→不追加未解析小节：✓")
 
 
 def test_section_empty_unresolved_no_subsection():
@@ -252,6 +261,7 @@ if __name__ == "__main__":
     test_section_without_resolve_trace()
     test_section_unresolved_subsection()
     test_section_unresolved_fallback_il()
+    test_section_empty_unresolved_no_fallback()
     test_section_empty_unresolved_no_subsection()
     test_section_unresolved_missing_empty()
     test_section_unresolved_no_name()

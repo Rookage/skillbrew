@@ -333,7 +333,7 @@ def _d22_invoke_section(g: dict, *, heading: str) -> list[str]:
     out.append(heading)
 
     # D23: unresolved 小节——无论有无 new_installed，都应展示哪些能力暂未纳入（反盲盒透明）
-    unresolved = rt.get("unresolved") or g.get("il", {}).get("unresolved", [])
+    unresolved = rt.get("unresolved") if "unresolved" in rt else g.get("il", {}).get("unresolved", [])
 
     if not inst and not unresolved:
         out.append("（本批无 new 能力候选，无可调用项。）")

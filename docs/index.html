@@ -102,7 +102,7 @@
 
   <section id="capabilities">
     <div class="container">
-      <h2>五大核心能力</h2>
+      <h2>六大核心能力</h2>
       <div class="cards">
         <div class="card">
           <div class="icon">🧠</div>
@@ -123,6 +123,11 @@
           <div class="icon">📊</div>
           <h3>透明台账</h3>
           <p>装完自动生成 RECORD.md 台账与 DASHBOARD.md 看板，记录来源、时间、调用方式与就绪状态，越装越清楚。</p>
+        </div>
+        <div class="card">
+          <div class="icon">🤖</div>
+          <h3>通用安装器</h3>
+          <p>AI 自动读源头仓库推断安装方法，试跑验证后装，缺什么就问你补什么。缓存命中秒装，catalog 种子兜底，装不了就明白告诉你卡在哪。</p>
         </div>
         <div class="card">
           <div class="icon">🖥️</div>
@@ -177,6 +182,9 @@ skillbrew dedup data/sources/douyin_7650401218518387995/
 skillbrew install data/sources/douyin_7650401218518387995/
 skillbrew install data/sources/douyin_7650401218518387995/ --approve
 
+# 6b. 启用 AI 推断（catalog 未收录的 MCP 也能自动装）
+skillbrew install data/sources/douyin_7650401218518387995/ --approve --ai-infer
+
 # 7. 生成台账 + 看板
 skillbrew record data/sources/douyin_7650401218518387995/</code></pre>
       <p>视频获取与语音转文字依赖较大，可按需安装：<code>pip install -e ".[media]"</code>。</p>
@@ -186,7 +194,7 @@ skillbrew record data/sources/douyin_7650401218518387995/</code></pre>
   <section id="status">
     <div class="container">
       <h2>现状</h2>
-      <p>骨架已跑通端到端。已真装并验证多个 MCP 服务器（playwright、filesystem、sequential-thinking、context7、github 等），具体清单和调用方式以本地 <code>RECORD.md</code> 台账为准，不在这里硬编码。</p>
+      <p>骨架已跑通端到端。已真装并验证多个 MCP 服务器（playwright、filesystem、sequential-thinking、context7、github、fetch 等），具体清单和调用方式以本地 <code>RECORD.md</code> 台账为准，不在这里硬编码。D23 通用安装器已上线：catalog 未收录的 MCP 可通过 <code>--ai-infer</code> 自动推断安装方法，AI 读源头仓库 + 试跑验证 + 缺项弹窗补全，验证过入缓存下次秒装。</p>
       <p>以下能力因依赖或凭证暂不满足，当前版本未默认安装：memos MCP（无官方 npm 包）、MoneyPrinterTurbo（需配置 OPENAI_API_KEY）。</p>
     </div>
   </section>

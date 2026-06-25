@@ -20,7 +20,7 @@
 
 ---
 
-## 五大核心能力
+## 六大核心能力
 
 ### 🧠 自动去重
 
@@ -64,6 +64,33 @@
 - **DASHBOARD.md**：累计看板，一眼看清能力分布
 - **去重/归并/可移除**：台账驱动，不会越装越乱
 - **调用方式透明**：每个能力都标注怎么触发（`@skill` 名 / 触发提示词）
+
+### 🤖 通用安装器（AI 推断）
+
+不只是查人工目录，**AI 直接去源头仓库读 README 自己判断怎么装**。
+
+四级降级链，每级失败都不崩：
+
+1. **查本地缓存** — 以前验证过的装法，秒装
+2. **查人工目录** — 6 条预验证种子（playwright / filesystem / sequential-thinking / context7 / github / sqlite）
+3. **AI 读源头仓库推断** — 缓存/目录都没有时，拉仓库 README / package.json / pyproject.toml，推断装法和所需参数
+4. **试跑验证** — 装前先跑 `--help` / `--version` 确认命令可用，最多重试 1–2 次换装法
+5. **缺项补全** — 缺 key 弹窗问，缺路径让补，绝不静默崩
+
+全走不通 → 老实标 `unresolved` + 写明卡在哪，不臆造、不黑箱。
+
+```bash
+# 默认关，加 --ai-infer 开启 AI 推断
+skillbrew install data/sources/<id>/ --approve --ai-infer
+
+# 跳过试跑验证（仅调试用）
+skillbrew install data/sources/<id>/ --approve --ai-infer --no-trial
+
+# 强制刷新本地缓存
+skillbrew install data/sources/<id>/ --approve --ai-infer --refresh-cache
+```
+
+> **安全**：试跑只跑命令本身（`npx <pkg> --help`），绝不写真配置、不碰 `claude mcp add`。密钥只存变量名、不存值（D14）。验证过的装法记入本地缓存，下次秒装。
 
 ### 🖥️ 双运行时中立
 
@@ -112,7 +139,7 @@ SkillBREW 接管
 | 4. 溯源 | 计划 | 验证后的计划 | `verify.py` | `sources/<id>/install_list.json` |
 | 5. 判断 | 验证后计划 | 评分排序 | `recommend.py` | `sources/<id>/judgment.json` |
 | 6. 去重 | 评分结果 | 去重决策 | `dedup.py` | `sources/<id>/dedup.json` |
-| 7. 安装 | 去重决策 | 已装能力 | `install.py` | `~/.claude/skills/` 或 `~/.claude.json` |
+| 7. 安装 | 去重决策 | 已装能力 | `install.py` + `installer.py` | `~/.claude/skills/` 或 `~/.claude.json`（`--ai-infer` 开启 AI 推断安装） |
 | 8. 记录 | 安装结果 | 台账/看板 | `record.py` | `RECORD.md` + `DASHBOARD.md` |
 
 ---
@@ -129,6 +156,7 @@ SkillBREW 接管
 - ✅ 授权门（默认 dry-run，`--approve` 才真装）
 - ✅ 安装后 readiness 标注（透明标注 ready / needs_runtime / needs_config / needs_credentials）
 - ✅ 双运行时中立（Claude Code / Codex CLI 自动识别）
+- ✅ 通用安装器（四级降级链：缓存→目录→AI推断→试跑→弹窗，AI 读源头仓库自己判断装法）
 
 **已真装验证的 MCP 服务器：**
 
@@ -139,6 +167,7 @@ SkillBREW 接管
 | `@modelcontextprotocol/server-sequential-thinking` | 结构化思考（复杂问题分步推理） | ✅ 已装 |
 | `@upstash/context7-mcp` | 官方文档查询（查最新库文档） | ✅ 已装 |
 | `@modelcontextprotocol/server-github` | GitHub 操作（issue / PR / 仓库查询） | ✅ 已装（已配置 PAT 并冒烟测试） |
+| `zcaceres/fetch-mcp` | 网页抓取（把 URL 内容转成 markdown） | ✅ 已装（AI 推断安装，端到端验证通过） |
 
 **以下能力因外部依赖或凭证未就绪，当前版本未默认安装：**
 
@@ -224,6 +253,9 @@ skillbrew install data/sources/douyin_7650401218518387995/
 
 # 4. 确认无误，真装
 skillbrew install data/sources/douyin_7650401218518387995/ --approve
+
+# 4b. 开启 AI 推断（catalog 未收录的 MCP 也能装）
+skillbrew install data/sources/douyin_7650401218518387995/ --approve --ai-infer
 
 # 5. 生成台账 + 看板
 skillbrew record data/sources/douyin_7650401218518387995/
