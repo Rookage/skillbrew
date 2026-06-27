@@ -7,12 +7,16 @@ from __future__ import annotations
 
 import base64
 import mimetypes
+import os
+import sys
 import warnings
 from pathlib import Path
 
 from openai import OpenAI
 
 from .config import Config, ProviderConfig
+from .errors import ConfigError
+from .errors import ConfigError
 
 
 # 已知模型/厂商 temperature 合法区间（按模型名/厂商标识匹配）。
@@ -60,12 +64,135 @@ def clip_temperature(model: str, temperature: float) -> float:
     return t
 
 
-def _client(p: ProviderConfig) -> OpenAI:
+def _client(p: ProviderConfig, *, label: str = "LLM") -> OpenAI:
+    """创建 OpenAI 兼容客户端。配置不全时给交互式引导（D16/D21）。
+
+    - 有 TTY：逐项交互式输入，自动写入 .env
+    - 无 TTY（headless/管道）：打印清晰配置指南
+    """
     if not (p.base_url and p.api_key):
-        raise RuntimeError(
-            "供应商配置不全：需要 BASE_URL + API_KEY（检查 .env 的 TEXT_* / VISION_*）"
+        _interactive_config(p, label)
+    if not (p.base_url and p.api_key):
+        raise ConfigError(
+            f"{label} 配置不全：需要 BASE_URL + API_KEY",
+            hint="请 cp .env.example .env 并编辑填入 key，或重跑让 skillbrew 交互式引导。",
         )
     return OpenAI(base_url=p.base_url, api_key=p.api_key)
+
+
+def _interactive_config(p: ProviderConfig, label: str) -> None:
+    """交互式填入缺失的配置项，写入 .env 文件。"""
+    from .config import env_path
+
+    if not sys.stdin.isatty():
+        _print_config_guide(label)
+        return
+
+    print(f"\n{'='*50}")
+    print(f"  {label} 配置缺失")
+    print(f"  当前：BASE_URL={p.base_url or '(空)'}  KEY={'***' if p.api_key else '(空)'}")
+    print(f"{'='*50}")
+    print("  是否现在交互式填入？[y/N] ", end="", flush=True)
+    try:
+        ans = sys.stdin.readline().strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        ans = "n"
+    if ans not in ("y", "yes"):
+        _print_config_guide(label)
+        return
+
+    env_file = env_path()
+    if not env_file.exists():
+        _bootstrap_env(env_file)
+
+    updates: dict[str, str] = {}
+    if not p.base_url:
+        val = _prompt_env("  BASE_URL", p.base_url, "https://api.deepseek.com").strip()
+        if val:
+            updates["TEXT_BASE_URL" if "TEXT" in label.upper() or "文本" in label else "VISION_BASE_URL"] = val
+    if not p.api_key:
+        prefix = "TEXT" if "TEXT" in label.upper() or "文本" in label else "VISION"
+        val = _prompt_env(f"  {prefix}_API_KEY", "").strip()
+        if val:
+            updates[f"{prefix}_API_KEY"] = val
+    if not p.model:
+        prefix = "TEXT" if "TEXT" in label.upper() or "文本" in label else "VISION"
+        val = _prompt_env(f"  {prefix}_MODEL", p.model, "deepseek-chat" if "TEXT" in label.upper() else "agnes-1.5-flash").strip()
+        if val:
+            updates[f"{prefix}_MODEL"] = val
+
+    if updates:
+        _write_env(env_file, updates)
+        for k, v in updates.items():
+            os.environ[k] = v
+        print(f"  ✅ 已写入 {env_file}（{len(updates)} 项）\n")
+    else:
+        print("  未填入任何配置。\n")
+
+
+def _prompt_env(name: str, current: str, default: str = "") -> str:
+    hint = f"（默认 {default}）" if default else ""
+    print(f"  {name}{hint}: ", end="", flush=True)
+    try:
+        val = sys.stdin.readline().strip()
+    except (EOFError, KeyboardInterrupt):
+        return current or default
+    return val or current or default
+
+
+def _print_config_guide(label: str) -> None:
+    from .config import env_path
+    env = env_path()
+    print(f"\n  [{label}] 配置引导：")
+    if not env.exists():
+        print(f"  1. cp .env.example .env")
+        print(f"  2. 编辑 {env}，填入你的 API key")
+    else:
+        print(f"  编辑 {env}，检查 TEXT_*/VISION_* 配置是否完整")
+    print(f"  🇨🇳 国内用户：DeepSeek (platform.deepseek.com) 文本模型推荐")
+    print(f"  🇬🇱 视觉模型：Agnes (platform.agnes-ai.com) 或 NVIDIA NIM (build.nvidia.com)\n")
+
+
+def _bootstrap_env(path) -> None:
+    example = path.parent / ".env.example"
+    if example.exists():
+        import shutil
+        shutil.copy(example, path)
+        print(f"  📋 已从 {example} 复制模板\n")
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "# skillbrew 配置 (D15 可插拔)\n"
+            "# 文本模型（必备，D21）\n"
+            "TEXT_BASE_URL=https://api.deepseek.com\n"
+            "TEXT_API_KEY=\n"
+            "TEXT_MODEL=deepseek-chat\n"
+            "# 视觉模型（可选，缺则降级为纯字幕消化）\n"
+            "VISION_BASE_URL=\n"
+            "VISION_API_KEY=\n"
+            "VISION_MODEL=agnes-1.5-flash\n",
+            encoding="utf-8",
+        )
+        print(f"  📋 已生成 {path}\n")
+
+
+def _write_env(path, updates: dict[str, str]) -> None:
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    lines = existing.splitlines(keepends=True)
+    written = set()
+    new_lines: list[str] = []
+    for line in lines:
+        for k, v in updates.items():
+            if line.strip().startswith(f"{k}=") or line.strip().startswith(f"{k} ="):
+                new_lines.append(f"{k}={v}\n")
+                written.add(k)
+                break
+        else:
+            new_lines.append(line)
+    for k, v in updates.items():
+        if k not in written:
+            new_lines.append(f"{k}={v}\n")
+    path.write_text("".join(new_lines), encoding="utf-8")
 
 
 def list_models(p: ProviderConfig) -> list[str]:
