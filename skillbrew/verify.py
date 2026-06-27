@@ -430,6 +430,11 @@ def enrich_with_frontmatter(
             on_progress(s, i, total)
         url = raw_url(owner, repo, branch, s["sk_md_path"])
         s["raw_url"] = url
+        # 在相邻请求之间等 0.5s，避免 GitHub raw 端点的瞬时频率限制
+        # （实测：35 个 skill 逐个拉不间隔时，远端频繁关闭连接）
+        if i > 0:
+            import time as _time
+            _time.sleep(0.5)
         try:
             body = _raw_text(url)
             fm = parse_frontmatter(body)

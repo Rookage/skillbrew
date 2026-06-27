@@ -267,7 +267,7 @@ def spec_to_item(
 # ---- D14 卫生：缓存只存环境变量名、不存值 ----
 # 真实密钥指纹清单——缓存文本命中任一即说明值泄漏，拒绝写入。env_template 的值经
 # _sanitize_env_values 清零，这里是非环境变量字段漏值的最后一道防线。
-_KEY_FINGERPRINTS = ("sk-", "ghp_", "github_pat_", "Bearer ", "AKIA", "xox")
+_KEY_FINGERPRINTS = ("sk-", "ghp_", "gho_", "ghs_", "ghu_", "github_pat_", "Bearer ", "AKIA", "xox")
 
 
 def _sanitize_env_values(spec: InstallSpec) -> InstallSpec:
