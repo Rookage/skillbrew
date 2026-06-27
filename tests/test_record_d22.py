@@ -114,7 +114,7 @@ def test_section_with_recommend():
 
 def test_provenance_label_all_values():
     """⑨ _provenance_label 五种值全映射正确，未知值回退原值。"""
-    assert R._provenance_label("cached") == "缓存命中"
+    assert R._provenance_label("cache") == "缓存命中"  # 对齐 installer.py cache_lookup 写的值
     assert R._provenance_label("catalog") == "catalog 种子"
     assert R._provenance_label("ai") == "AI 推断（已验证）"
     assert R._provenance_label("ai_unverified") == "AI 推断（未验证）"
@@ -122,14 +122,14 @@ def test_provenance_label_all_values():
     assert R._provenance_label("bogus") == "bogus"  # 未知值回退原文
     assert R._provenance_label("") == "未知"  # 空字符串→未知
     assert R._provenance_label(None) == "未知"  # None→未知
-    print("  [9] _provenance_label 五种值全映射：✓ cached/catalog/ai/ai_unverified/unresolved/未知")
+    print("  [9] _provenance_label 五种值全映射：✓ cache/catalog/ai/ai_unverified/unresolved/未知")
 
 
 def test_section_with_provenance_column():
     """⑩ 真装 + resolve_trace 有数据 → 表头含「装法来源」列，每行显示中文 provenance。"""
     rt = {
         "items": {
-            "a": {"provenance": "cached", "trace": ["L1 缓存命中"], "missing": []},
+            "a": {"provenance": "cache", "trace": ["L1 缓存命中"], "missing": []},
             "b": {"provenance": "ai", "trace": ["L3 AI 推断"], "missing": ["KEY_X"]},
             "c": {"provenance": "catalog", "trace": [], "missing": []},
         },

@@ -305,9 +305,11 @@ def _rollback_repo_lines(names: list[str]) -> list[str]:
 
 
 def _provenance_label(p: str) -> str:
-    """装法来源中文映射（D23 反盲盒）。"""
+    """装法来源中文映射（D23 反盲盒）。installer.py 写的 provenance 取值：
+    cache/catalog/ai/ai_unverified/unresolved（installer.py cache_lookup 命中
+    后 provenance 改写为 "cache" 而非 "cached"，这里对齐）。"""
     return {
-        "cached": "缓存命中",
+        "cache": "缓存命中",
         "catalog": "catalog 种子",
         "ai": "AI 推断（已验证）",
         "ai_unverified": "AI 推断（未验证）",
