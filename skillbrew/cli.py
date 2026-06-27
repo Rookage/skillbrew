@@ -182,8 +182,18 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"   -> {r.title}（时长 {r.duration}s）")
 
     # ② 字幕 ASR
+    _EMPTY_TRANSCRIPT = '{"segments":[],"text":"","language":""}'
+    _EMPTY_TRANSCRIPT = '{"segments":[],"text":"","language":""}'
     if args.skip_asr:
         print("[②字幕] --skip-asr 跳过")
+        _tp = src_dir / "transcript.json"
+        if not _tp.exists():
+            _tp.write_text(_EMPTY_TRANSCRIPT, encoding="utf-8")
+            (src_dir / "transcript.txt").write_text("", encoding="utf-8")
+        _tp = src_dir / "transcript.json"
+        if not _tp.exists():
+            _tp.write_text(_EMPTY_TRANSCRIPT, encoding="utf-8")
+            (src_dir / "transcript.txt").write_text("", encoding="utf-8")
     elif not args.force and (src_dir / "transcript.json").exists():
         print("[②字幕] 已存在，跳过")
     else:
@@ -283,6 +293,10 @@ def cmd_understand(args: argparse.Namespace) -> int:
 
     if args.skip_asr:
         print("[字幕] --skip-asr 跳过")
+        if not (src / "transcript.json").exists():
+            _EMPTY = '{"segments":[],"text":"","language":""}'
+            (src / "transcript.json").write_text(_EMPTY, encoding="utf-8")
+            (src / "transcript.txt").write_text("", encoding="utf-8")
     elif not args.force and (src / "transcript.json").exists():
         print("[字幕] 已存在，跳过")
     else:

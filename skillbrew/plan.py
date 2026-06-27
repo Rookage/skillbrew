@@ -24,6 +24,7 @@ from pathlib import Path
 
 from .config import load_config
 from . import llm
+from .errors import StepFailed, ConfigError
 
 SYSTEM = (
     "你是 skillbrew 的消化引擎。输入是一段科技短视频的「语音字幕」和若干「关键帧视觉描述」"
@@ -102,7 +103,13 @@ def digest(source_dir: Path, *, timeout: float = 180.0) -> dict:
     visions = json.loads(vis_file.read_text(encoding="utf-8")) if vis_file.exists() else []
     visions = [v for v in visions if v.get("ok")]
     if not transcript and not visions:
-        raise RuntimeError(f"字幕和视觉都为空: {source_dir}")
+        raise StepFailed(
+            "字幕和视觉都为空，无法生成消化计划。\n"
+            "  可能的原因：\n"
+            "  1. 视频无字幕且未跑 ASR（重新跑 skillbrew understand 不加 --skip-asr）\n"
+            "  2. 未配置视觉模型（加 --skip-vision 且无字幕 → 双空）\n"
+            "  3. 未配置文本模型（cp .env.example .env 并填 TEXT_API_KEY）"
+        )
 
     cfg = load_config()
     prompt = _build_prompt(transcript, visions)

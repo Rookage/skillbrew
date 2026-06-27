@@ -10,11 +10,15 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [{name = "skillbrew contributors"}]
-repository = "https://github.com/Rookage/skillbrew"
-homepage = "https://rookage.github.io/skillbrew"
 dependencies = [
     "openai>=1.0",
+    "numpy>=1.20",
+    "Pillow>=9.0",
 ]
+
+[project.urls]
+repository = "https://github.com/Rookage/skillbrew"
+homepage = "https://rookage.github.io/skillbrew"
 
 [project.optional-dependencies]
 # 视频获取与 ASR（MVP B站单源才需要；较大，按需安装避免拖慢）
