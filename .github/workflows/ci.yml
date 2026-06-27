@@ -9,6 +9,29 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install ruff
+      - run: ruff check skillbrew/ tests/ scripts/
+      - run: ruff format --check skillbrew/ tests/ scripts/
+
+  types:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install ".[dev]" mypy
+      - run: mypy skillbrew/ --ignore-missing-imports --no-error-summary
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -19,6 +42,6 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: pip install -e ".[dev]"
-      - run: pytest -q
+      - run: pytest -q --cov=skillbrew --cov-report=term-missing
       - name: docs sync guard
         run: python scripts/check_docs_sync.py --check
