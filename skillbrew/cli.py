@@ -28,6 +28,7 @@ from . import config
 from . import llm
 from . import notify
 from .config import Config, ensure_utf8_stdout, load_config
+from .errors import SkillbrewError
 
 
 def _print_config(cfg: Config) -> None:
@@ -110,6 +111,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             cfg, "用一句话介绍你自己，并说出你的模型名。", timeout=60
         )
         print(f"   [OK] {time.time() - t0:.1f}s -> {reply}")
+    except SkillbrewError as e:
+        print(f"   [WARN] {e}")
+        if e.hint:
+            print(f"   → {e.hint}")
     except Exception as e:
         traceback.print_exc()
         print(f"   [FAIL] {time.time() - t0:.1f}s ->", repr(e)[:300])
