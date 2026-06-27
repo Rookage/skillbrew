@@ -149,14 +149,19 @@ SkillBREW 接管
 **骨架阶段，但已跑通端到端。**
 
 - ✅ 8 步管线全通（B站 / 抖音双源验证）
-- ✅ 多形态支持（Skill + MCP + 代码 / 配置 / Prompt）
-- ✅ 自动去重（三层从严：名字 / 描述 / 语义）
-- ✅ 自动评估（`recommend` 输出值得装 / 挑着装 / 跳过建议）
-- ✅ 可视化报告（RECORD.md 台账 + DASHBOARD.md 看板）
+- ✅ 多形态支持（Skill + MCP + 代码 / 配置 / Prompt + repo 克隆即用）
+- ✅ 自动去重（三层从严 + 形态感知：Skill / MCP / repo 独立基准）
+- ✅ 自动评估（`recommend` 三模式：keyword 规则打分 / manual 人工勾选 / ai 文本模型判断）
+- ✅ 可视化报告（RECORD.md 台账 + DASHBOARD.md 看板 + INSTALLED_INDEX.md 能力索引）
 - ✅ 授权门（默认 dry-run，`--approve` 才真装）
 - ✅ 安装后 readiness 标注（透明标注 ready / needs_runtime / needs_config / needs_credentials）
-- ✅ 双运行时中立（Claude Code / Codex CLI 自动识别）
-- ✅ 通用安装器（四级降级链：缓存→目录→AI推断→试跑→弹窗，AI 读源头仓库自己判断装法）
+- ✅ 双运行时中立（Claude Code / Codex CLI 自动识别，TOML/JSON 双格式 MCP 注册）
+- ✅ 通用安装器（四级降级链：缓存→catalog→AI推断→试跑→缺项补全，AI 读源头仓库自己判断装法）
+- ✅ 交互式配置引导（首次运行无 `.env` 时，有终端可逐项填入 key，无终端打印清晰指引）
+- ✅ 结构化错误体系（`SkillbrewError` / `StepFailed` / `ConfigError` / `NetworkError`，中文报错含处理建议）
+- ✅ 模型兼容层（自动按模型裁剪 `temperature`，避免 Claude 等严格模型 400 报错）
+- ✅ CI 质量门（ruff lint + mypy 类型检查 + pytest 119 个测试全部通过）
+- ✅ 新用户零配置体验（pip install 缺依赖不崩、--skip-asr 不阻断后续管线）
 
 **已真装验证的 MCP 服务器：**
 
@@ -178,23 +183,30 @@ SkillBREW 接管
 
 - 分角色配置（`.env`，已 gitignore）：文本组 `TEXT_*` = DeepSeek；视觉组 `VISION_*` = Agnes
 - 可插拔 LLM 客户端（D15）：`chat_text` / `chat_vision`，换供应商只改 `.env`
-- 自检命令 `skillbrew doctor`
-- Python 3.10+，openai SDK，yt-dlp，faster-whisper，ffmpeg
+- 交互式配置引导：无 `.env` 时自动弹出问答，一步填完 key（D16/D21）
+- 模型兼容层：自动按模型裁剪 `temperature` 等参数，换供应商零代码改动
+- 自检命令 `skillbrew doctor`（含 ffmpeg 可用性检查）
+- 结构化错误：中文报错 + 处理建议，Ctrl+C 不崩
+- CI 质量门：ruff lint + mypy 类型检查 + pytest 119 测试全绿（含 installer 19 测试全覆盖）
 
 ---
 
 ## 安装
 
 ```bash
-# 1. 复制配置并填入你自己的 key
+# 1. 复制配置并填入你自己的 key（也可以跳过——skillbrew 会在首次使用时交互式引导你填）
 cp .env.example .env
 #   编辑 .env：TEXT_API_KEY（DeepSeek）、VISION_API_KEY（Agnes）
+#   推荐替代：NVIDIA NIM 免费 Qwen3.5（快 ~50x，文本+视觉同一模型，见 .env.example 注释）
 
-# 2. 安装（可编辑，注册 skillbrew 命令）
+# 2. 系统依赖
+#   必装：ffmpeg (Linux: apt install ffmpeg | Mac: brew install ffmpeg | Win: scoop install ffmpeg)
+
+# 3. 安装（可编辑，注册 skillbrew 命令）
 pip install -e .
 ```
 
-依赖：`openai`（必装）。视频获取 / ASR 走可选依赖 `pip install -e ".[media]"`（yt-dlp + faster-whisper，较大，按需装）。
+依赖：`openai`、`numpy`、`Pillow`（必装，`pip install -e .` 自动安装）。视频获取 / ASR 走可选依赖 `pip install -e ".[media]"`（yt-dlp + faster-whisper，较大，按需装）。
 
 ---
 
@@ -286,14 +298,19 @@ skillbrew config            # 打印解析后的配置（key 脱敏）
 - `understand` 用 faster-whisper（small/int8/CPU）转字幕，模型 `Systran/faster-whisper-small` 首次从 HuggingFace 下载（走镜像 `HF_ENDPOINT=https://hf-mirror.com`，国内友好），首次加载约 1～3 分钟。
 - **下载失败不崩**：镜像/网络拉不下来时，skillbrew 会报错 + 跳出人类可读提醒（告诉你去哪下：`hf-mirror.com`，或翻墙走官方 `huggingface.co`，以及如何用本地模型），然后**降级跳过字幕**——关键帧看图照常，后续管线继续跑，只是消化质量打折（没字幕佐证）。
 - **彻底离线兜底**：手动下好 `Systran/faster-whisper-small` 整个目录，在 `.env` 设 `WHISPER_MODEL_PATH=<那个目录>`，WhisperModel 直接加载本地路径，完全不触发网络下载。详见 `.env.example`。
+- **纯文本输入**：`--skip-asr --skip-vision` 现在会自动补空字幕/视觉文件，不再崩溃——即使无 API key 也能先把素材采集下来。
 
 **② Windows 终端 GBK 编码崩**
 
-- Windows 默认控制台编码 GBK，`print` 含零宽空格（`​`，B站/抖音标题常见）等字符时曾崩在最后一刻——明明下载成功却因打日志炸。
-- 现已**入口统一强制 UTF-8**（`errors=replace`，编不出就替换成 `?` 而非抛异常），所有 `print` 不再因编码崩。
-- 极少数老环境若仍乱码：终端跑 `chcp 65001`，或设环境变量 `PYTHONUTF8=1`。
+- 已**入口统一强制 UTF-8**（`errors=replace`）。极少数老环境若仍乱码：终端跑 `chcp 65001`，或设环境变量 `PYTHONUTF8=1`。
 
-**③ 邮件通知（可选）**
+**③ 交互式 API key 配置（新增）**
+
+- 首次运行 `skillbrew run` / `doctor` / `plan` 等步骤时，如果 `.env` 未配置，skillbrew 会**自动弹出交互式问答**，逐项引导你填入 API key。填完即写入 `.env`，下次不再问。
+- 在无终端环境（headless / CI / 管道）中，skillbrew 打印清晰的配置指南并继续执行（不卡死）。
+- 也可手动配置：`cp .env.example .env` → 编辑填入 key。推荐替代方案：NVIDIA NIM 免费 Qwen3.5（见 `.env.example` 注释）。
+
+**④ 邮件通知（可选）**
 
 - 在 `.env` 填 `MAIL_ADDRESS` / `MAIL_AUTH_CODE` / `MAIL_PROVIDER`（预设 qq/163/gmail/outlook，或自定义 `MAIL_HOST`/`PORT`/`USE_SSL`），`install --approve` 真装完成会自动发一封 HTML 完成报告（清单 + 下一步待办）。
 - 不配就不发、不报错（会在安装末尾提示一次「未配置」）。授权码不是登录密码，各供应商后台开 SMTP 拿。详见 `.env.example`。
