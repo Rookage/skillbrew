@@ -37,7 +37,7 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-from . import mcp_catalog
+from . import mcp_catalog, ratelimit
 
 API_BASE = "https://api.github.com"
 RAW_BASE = "https://raw.githubusercontent.com"
@@ -57,13 +57,18 @@ def _get(url: str, *, accept: str = "application/vnd.github+json", timeout: floa
     """发请求；5xx 与网络瞬时错误自动退避重试（git/trees 端点偶发 504，重试通常即通）。
 
     4xx（404/403 限速等）不重试，原样返回 (code, body) 交调用方判断。
+    发请求前先过 ratelimit 令牌桶（search/core 分桶），主动节流尽量不撞 403；
+    收到响应（成功或 HTTPError）后用 X-RateLimit-* 头同步本地桶，避免估算漂移。
     """
+    ratelimit.acquire_for_url(url)
     for attempt in range(_MAX_RETRIES):
         req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": accept})
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
+                ratelimit.update_from_headers(url, r.headers)
                 return r.status, r.read()
         except urllib.error.HTTPError as e:
+            ratelimit.update_from_headers(url, e.headers)
             if 500 <= e.code < 600 and attempt < _MAX_RETRIES - 1:
                 time.sleep(_RETRY_BACKOFF * (attempt + 1))
                 continue  # 5xx 网关瞬时错误，退避后重试
