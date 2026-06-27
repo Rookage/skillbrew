@@ -43,6 +43,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import warnings
 from pathlib import Path
 
 from . import config
@@ -266,7 +267,18 @@ def _install_mcp_json_merge(name: str, item: dict, scope: str,
         if pm.exists():
             try:
                 pdata = json.loads(pm.read_text(encoding="utf-8"))
-            except Exception:  # noqa: BLE001  损坏从空重建，.bak 不适用于独立文件
+            except Exception as e:  # noqa: BLE001
+                # 损坏：先备份原文件到 .bak（防数据丢失），再警告，从空重建
+                try:
+                    corrupt = pm.read_bytes()
+                    bak = pm.with_name(pm.name + ".bak")
+                    bak.write_bytes(corrupt)
+                except Exception:  # noqa: BLE001
+                    pass
+                warnings.warn(
+                    f"项目级 .mcp.json 损坏无法解析，已备份为 {pm.name}.bak 并从空重建：{e}",
+                    stacklevel=2,
+                )
                 pdata = {}
         pdata.setdefault("mcpServers", {})[name] = server
         pm.write_text(json.dumps(pdata, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -281,7 +293,12 @@ def _install_mcp_json_merge(name: str, item: dict, scope: str,
             return {}
         try:
             return json.loads(cj.read_text(encoding="utf-8"))
-        except Exception:  # noqa: BLE001  ~/.claude.json 损坏：从空重建（.bak 兜底保其它配置）
+        except Exception as e:  # noqa: BLE001
+            # ~/.claude.json 损坏：从空重建（bak 在 _read() 之后写于 301 行，已备份原字节）
+            warnings.warn(
+                f"~/.claude.json 损坏无法解析，已备份为 .bak 并从空重建（其它 MCP 配置将丢失，需手工合并）：{e}",
+                stacklevel=2,
+            )
             return {}
 
     data = _read()
@@ -944,7 +961,9 @@ def install(
                     has_tty=config.has_tty(), chat_fn=chat_fn, prompt_fn=prompt_fn,
                 )
             except Exception as e:  # noqa: BLE001 —— 任何级失败都不崩，绝不中断安装
-                resolve_traces.append(f"[{name}] resolve 异常（留 unresolved）：{e}")
+                msg = f"[{name}] resolve 异常（留 unresolved）：{e}"
+                resolve_traces.append(msg)
+                warnings.warn(msg, stacklevel=2)
                 continue
             for t in (rr.trace or []):
                 resolve_traces.append(f"[{name}] {t}")

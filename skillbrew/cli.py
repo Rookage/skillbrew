@@ -18,6 +18,8 @@ import struct
 import sys
 import tempfile
 import time
+import traceback
+import warnings
 import zlib
 from pathlib import Path
 
@@ -109,6 +111,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         )
         print(f"   [OK] {time.time() - t0:.1f}s -> {reply}")
     except Exception as e:
+        traceback.print_exc()
         print(f"   [FAIL] {time.time() - t0:.1f}s ->", repr(e)[:300])
         return 2
 
@@ -137,6 +140,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                 print(f"   [OK] {time.time() - t0:.1f}s -> {reply}")
                 print("   (期望：左红右蓝 —— 答对即证明模型真在看图)")
             except Exception as e:
+                traceback.print_exc()
                 print(f"   [FAIL] {time.time() - t0:.1f}s ->", repr(e)[:300])
             finally:
                 os.unlink(tmp.name)
@@ -356,6 +360,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     try:
         summary = verify_mod.verify(src, repo_override=args.repo, on_progress=on_progress)
     except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
         print(f"[FAIL] 溯源失败：{e}")
         return 2
 
@@ -410,6 +415,7 @@ def cmd_dedup(args: argparse.Namespace) -> int:
     try:
         summary = dedup_mod.dedup(src, skill_dirs=skill_dirs, on_progress=on_progress)
     except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
         print(f"[FAIL] 去重失败：{e}")
         return 2
 
@@ -566,6 +572,7 @@ def cmd_install(args: argparse.Namespace) -> int:
             chat_fn=chat_fn, prompt_fn=None,
         )
     except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
         print(f"[FAIL] 安装失败：{e}")
         return 2
 
@@ -692,6 +699,7 @@ def cmd_record(args: argparse.Namespace) -> int:
     try:
         r = record_mod.record(src, skill_dirs=skill_dirs, on_progress=on_progress)
     except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
         print(f"[FAIL] 记录失败：{e}")
         return 2
 

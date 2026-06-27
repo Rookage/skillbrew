@@ -58,6 +58,7 @@ import os
 import re
 import subprocess
 import tempfile
+import warnings
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -365,7 +366,12 @@ def _atomic_write_json(path, obj: dict) -> None:
     path = Path(path)
     text = json.dumps(obj, ensure_ascii=False, indent=2, sort_keys=True)
     if _has_key_fingerprint(text):
-        return  # D14 最后一道防线：拒绝写可能含 key 的文件，静默跳过不崩
+        # D14 最后一道防线：拒绝写可能含 key 的文件，不崩但留痕
+        warnings.warn(
+            f"install_cache 写入跳过（D14 指纹守卫命中，疑似含密钥）：{path}",
+            stacklevel=2,
+        )
+        return
     parent = path.parent
     os.makedirs(parent, exist_ok=True)
     tmp_fd, tmp_path = tempfile.mkstemp(prefix=".install_cache_", suffix=".tmp", dir=str(parent))

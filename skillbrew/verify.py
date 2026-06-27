@@ -31,6 +31,7 @@ import re
 import subprocess
 import time
 import urllib.error
+import warnings
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -436,6 +437,7 @@ def enrich_with_frontmatter(
             s["description"] = fm.get("description", "")
             s["body_chars"] = len(body)
         except RuntimeError as e:
+            warnings.warn(f"SKILL.md 获取失败 {url}: {e}", stacklevel=2)
             s["display_name"] = s["name"]
             s["description"] = ""
             s["fetch_error"] = str(e)[:200]
