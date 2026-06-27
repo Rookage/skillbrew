@@ -897,5 +897,22 @@ def main(argv: list[str] | None = None) -> int:
     return args.func(args)
 
 
+def _exit_code(exc: BaseException) -> int:
+    """把异常映射到进程退出码，给 main() 用。"""
+    from .errors import SkillbrewError
+    if isinstance(exc, SkillbrewError):
+        print(f"\n[FAIL] {exc}", file=sys.stderr)
+        if exc.hint:
+            print(f"  → {exc.hint}", file=sys.stderr)
+        return 1
+    if isinstance(exc, KeyboardInterrupt):
+        print("\n中断。", file=sys.stderr)
+        return 130
+    # 非预期异常：完整 traceback 供调试
+    import traceback as _tb
+    _tb.print_exc()
+    return 2
+
+
 if __name__ == "__main__":
     sys.exit(main())
