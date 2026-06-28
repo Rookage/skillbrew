@@ -115,7 +115,7 @@ def main() -> int:
         )
         return 1 if strict else 0
 
-    print("\n文档同步检查通过 ✅")
+    print("\n文档同步检查通过 OK")
     return 0
 
 
