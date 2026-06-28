@@ -15,6 +15,9 @@
 - 抖音 adapter：使用 yt-dlp 提取（抖音 API 需要复杂签名，yt-dlp 已处理）。
   抖音短链需先解析重定向拿真实 URL。
 
+- 网页 adapter（D24）：fetch_webpage — 抓取网页正文，写入 transcript.txt
+- 纯文本 adapter（D24）：fetch_text — 裸文本/文档直接写入 transcript.txt
+
 换源(YouTube/其他)只需新增 adapter，主流程不变。
 """
 
@@ -26,6 +29,9 @@ import subprocess
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+
+import requests
+from bs4 import BeautifulSoup
 
 BVID_RE = re.compile(r"BV[0-9A-Za-z]{10}")
 DOUYIN_ID_RE = re.compile(r"/video/(\d+)")
@@ -59,6 +65,16 @@ class DouyinFetchResult:
     duration: int
     video_path: Path
     audio_path: Path
+    meta_path: Path
+
+
+@dataclass
+class TextFetchResult:
+    """文本/网页/文档获取结果（视频无关源）。"""
+
+    title: str
+    text: str
+    text_path: Path
     meta_path: Path
 
 
@@ -310,12 +326,123 @@ def fetch_douyin(source: str, out_dir: Path) -> DouyinFetchResult:
     )
 
 
-# ---- 直接运行：python -m skillbrew.ingest <url> [out_dir] ----
+# ---- 网页 / 文本源（D24：无视频输入）----
+
+_HTML_STRIP = re.compile(r"<[^>]+>")
+_BLANK_LINE = re.compile(r"\n{3,}")
+
+
+def _clean_html(html: str) -> str:
+    """从 HTML 中提取可读文本：去 script/style，取 body 正文，合并多余空行。"""
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
+        tag.decompose()
+    body = soup.body or soup
+    text = body.get_text(separator="\n", strip=True)
+    text = _BLANK_LINE.sub("\n\n", text)
+    return text.strip()
+
+
+def fetch_webpage(
+    source: str,
+    out_dir: Path,
+    *,
+    timeout: float = 30.0,
+) -> TextFetchResult:
+    """抓取一个网页，提取正文写入 transcript.txt。
+
+    source: 网页 URL（https 开头）。
+    out_dir: 输出目录（自动建）。
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    r = requests.get(source, headers={"User-Agent": UA}, timeout=timeout)
+    r.raise_for_status()
+    r.encoding = r.apparent_encoding or "utf-8"
+
+    html = r.text
+    text = _clean_html(html)
+
+    # 取标题：优先 og:title → <title> → URL
+    soup = BeautifulSoup(html, "html.parser")
+    title = (
+        _og_title(soup)
+        or _tag_text(soup, "title")
+        or source.rsplit("/", 1)[-1]
+    )
+
+    text_path = out_dir / "transcript.txt"
+    text_path.write_text(text, encoding="utf-8")
+    meta = {"url": source, "title": title, "charset": r.encoding or "utf-8"}
+    (out_dir / "meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    return TextFetchResult(
+        title=title,
+        text=text,
+        text_path=text_path,
+        meta_path=out_dir / "meta.json",
+    )
+
+
+def _og_title(soup: BeautifulSoup) -> str:
+    tag = soup.find("meta", property="og:title")
+    if tag is None:
+        return ""
+    content = tag.get("content")
+    return (str(content or "")).strip() if content else ""
+
+
+def _tag_text(soup: BeautifulSoup, tag: str) -> str:
+    el = soup.find(tag)
+    return (el.get_text(strip=True) or "") if el else ""
+
+
+def fetch_text(
+    source: str,
+    out_dir: Path,
+    *,
+    title: str = "",
+) -> TextFetchResult:
+    """将裸文本或文件内容写入 transcript.txt。
+
+    source: 文本内容，或 .txt/.md/.pdf 文件的路径。
+    out_dir: 输出目录（自动建）。
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    path = Path(source)
+    if path.exists() and path.is_file():
+        text = path.read_text(encoding="utf-8", errors="replace")
+        title = title or path.stem
+    else:
+        text = source
+        title = title or "直接输入文本"
+
+    text_path = out_dir / "transcript.txt"
+    text_path.write_text(text, encoding="utf-8")
+    meta = {"title": title, "source": "direct" if not path.exists() else str(path)}
+    (out_dir / "meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    return TextFetchResult(
+        title=title,
+        text=text,
+        text_path=text_path,
+        meta_path=out_dir / "meta.json",
+    )
+
+
+# ---- 直接运行：python -m skillbrew.ingest <url|文本> [out_dir] ----
 def _main() -> int:
     import sys
 
     if len(sys.argv) < 2:
-        print("用法: python -m skillbrew.ingest <B站URL/BV号|抖音URL/ID> [输出目录]")
+        print("用法: python -m skillbrew.ingest <B站URL/BV号|抖音URL/ID|网页URL|文本/文件> [输出目录]")
         return 1
     src = sys.argv[1]
 
@@ -341,9 +468,21 @@ def _main() -> int:
         print(f"     video_id={r.video_id} 时长={r.duration}s")  # type: ignore[attr-defined]
         print(f"     视频: {r.video_path} ({r.video_path.stat().st_size // 1024}KB)")
         print(f"     音频: {r.audio_path} ({r.audio_path.stat().st_size // 1024}KB)")
+    elif src.startswith("http://") or src.startswith("https://"):
+        # 网页
+        out = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(f"data/sources/web_{hash(src) & 0xFFFFFFFF:08x}")
+        r = fetch_webpage(src, out)  # type: ignore[assignment]
+        print(f"[OK] {r.title}")
+        print(f"     正文长度: {len(r.text)} 字")  # type: ignore[attr-defined]
+        print(f"     输出: {r.text_path}")  # type: ignore[attr-defined]
     else:
-        print(f"[ERR] 未识别的平台: {src}")
-        return 1
+        # 当成纯文本或文件路径
+        src_label = Path(src).name if Path(src).exists() else "直接输入"
+        out = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(f"data/sources/text_{hash(src) & 0xFFFFFFFF:08x}")
+        r = fetch_text(src, out, title=src_label)  # type: ignore[assignment]
+        print(f"[OK] {r.title}")
+        print(f"     正文长度: {len(r.text)} 字")  # type: ignore[attr-defined]
+        print(f"     输出: {r.text_path}")  # type: ignore[attr-defined]
     return 0
 
 

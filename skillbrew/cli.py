@@ -255,7 +255,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_ingest(args: argparse.Namespace) -> int:
-    """只跑采集（下载视频 + 音频）。"""
+    """只跑采集（下载视频 + 音频 / 抓取网页 / 捕获文本）。"""
     from . import ingest
 
     cfg = load_config()
@@ -282,9 +282,27 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         print(f"     video_id={r.video_id} 时长={r.duration}s")  # type: ignore[attr-defined]
         print(f"     视频: {r.video_path} ({r.video_path.stat().st_size // 1024}KB)")
         print(f"     音频: {r.audio_path} ({r.audio_path.stat().st_size // 1024}KB)")
+    elif src.startswith("http://") or src.startswith("https://"):
+        # 网页
+        src_dir = cfg.data_dir / "sources" / f"web_{hash(src) & 0xFFFFFFFF:08x}"
+        r = ingest.fetch_webpage(src, src_dir)  # type: ignore[assignment]
+        print(f"[OK] {r.title}")
+        print(f"     正文长度: {len(r.text)} 字")  # type: ignore[attr-defined]
+        print(f"     输出: {r.text_path}")  # type: ignore[attr-defined]
+    elif Path(src).exists() and Path(src).is_file():
+        # 本地文件
+        src_dir = cfg.data_dir / "sources" / f"file_{Path(src).stem}"
+        r = ingest.fetch_text(src, src_dir)  # type: ignore[assignment]
+        print(f"[OK] {r.title}")
+        print(f"     正文长度: {len(r.text)} 字")  # type: ignore[attr-defined]
+        print(f"     输出: {r.text_path}")  # type: ignore[attr-defined]
     else:
-        print(f"[ERR] 未识别的平台: {src}")
-        return 1
+        # 当成纯文本输入
+        src_dir = cfg.data_dir / "sources" / f"text_{hash(src) & 0xFFFFFFFF:08x}"
+        r = ingest.fetch_text(src, src_dir)  # type: ignore[assignment]
+        print(f"[OK] {r.title}")
+        print(f"     正文长度: {len(r.text)} 字")  # type: ignore[attr-defined]
+        print(f"     输出: {r.text_path}")  # type: ignore[attr-defined]
     return 0
 
 
