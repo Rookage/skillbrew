@@ -1,5 +1,11 @@
 # SkillBREW — 技能酿造局
 
+[![CI](https://github.com/Rookage/skillbrew/actions/workflows/ci.yml/badge.svg)](https://github.com/Rookage/skillbrew/actions/workflows/ci.yml)
+[![GitHub Pages](https://github.com/Rookage/skillbrew/actions/workflows/pages.yml/badge.svg)](https://github.com/Rookage/skillbrew/actions/workflows/pages.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](./pyproject.toml)
+[![MCP](https://img.shields.io/badge/MCP-ready-8a63d2.svg)](#已验证的-mcp-种子--verified-mcp-seeds)
+
 ![SkillBREW hero](docs/assets/skillbrew-hero.png)
 
 > **中文**：把散落在视频、网页、README 和推荐清单里的 Agent 能力，酿成可验证、可安装、可追踪的一套本地能力库。  
