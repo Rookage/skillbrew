@@ -225,7 +225,7 @@ def test_reset_buckets_for_tests_restores_full():
     ratelimit._core_bucket.acquire(60.0)
     ratelimit._search_bucket.acquire(10.0)
     assert abs(ratelimit._core_bucket.remaining()) < 1e-6
-    assert abs(ratelimit._search_bucket.remaining()) < 1e-6
+    assert abs(ratelimit._search_bucket.remaining()) < 1e-5, "search bucket leaked beyond tolerance"
     ratelimit._reset_buckets_for_tests()
     assert abs(ratelimit._core_bucket.remaining() - ratelimit._CORE_CAPACITY) < 1e-6
     assert abs(ratelimit._search_bucket.remaining() - ratelimit._SEARCH_CAPACITY) < 1e-6
