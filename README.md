@@ -101,8 +101,8 @@ skillbrew install data/sources/<id>/ --approve --ai-infer --refresh-cache
 - 可用环境变量逐项覆盖，项目级 `.claude/skills/` 同样识别
 
 **技术实现**：
-- 文本理解：DeepSeek（deepseek-chat）
-- 视觉理解：Agnes（agnes-1.5-flash）
+- 文本理解：NVIDIA NIM 免费 Qwen3.5（快 50x，也支持 DeepSeek / Agnes）
+- 视觉理解：同上 Qwen3.5（快 ~6s/张，文本+视觉同一模型）
 - 字幕提取：yt-dlp + faster-whisper
 - 关键帧抽取：ffmpeg + PIL 帧间差异签名
 
@@ -181,7 +181,7 @@ SkillBREW 接管
 
 **技术栈：**
 
-- 分角色配置（`.env`，已 gitignore）：文本组 `TEXT_*` = DeepSeek；视觉组 `VISION_*` = Agnes
+- 分角色配置（`.env`，已 gitignore）：文本组 `TEXT_*` / 视觉组 `VISION_*` 默认 NVIDIA NIM 免费 Qwen3.5，可换成 DeepSeek / Agnes
 - 可插拔 LLM 客户端（D15）：`chat_text` / `chat_vision`，换供应商只改 `.env`
 - 交互式配置引导：无 `.env` 时自动弹出问答，一步填完 key（D16/D21）
 - 模型兼容层：自动按模型裁剪 `temperature` 等参数，换供应商零代码改动
@@ -196,8 +196,8 @@ SkillBREW 接管
 ```bash
 # 1. 复制配置并填入你自己的 key（也可以跳过——skillbrew 会在首次使用时交互式引导你填）
 cp .env.example .env
-#   编辑 .env：TEXT_API_KEY（DeepSeek）、VISION_API_KEY（Agnes）
-#   推荐替代：NVIDIA NIM 免费 Qwen3.5（快 ~50x，文本+视觉同一模型，见 .env.example 注释）
+#   编辑 .env：推荐 NVIDIA NIM 免费 Qwen3.5（快 50x），也支持 DeepSeek / Agnes
+#   推荐替代：已改默认 NVIDIA，DeepSeek / Agnes 仍可用（见 .env.example 注释）
 
 # 2. 系统依赖
 #   必装：ffmpeg (Linux: apt install ffmpeg | Mac: brew install ffmpeg | Win: scoop install ffmpeg)
@@ -281,7 +281,7 @@ skillbrew record data/sources/douyin_7650401218518387995/
 
 ```bash
 skillbrew doctor            # 配置 + 文本连通 + 视觉模型列表（快）
-skillbrew doctor --vision   # 额外跑一次真·看图（Agnes ~5min/张）
+skillbrew doctor --vision   # 额外跑一次真·看图（NVIDIA ~6s/张，Agnes ~5min/张）
 skillbrew config            # 打印解析后的配置（key 脱敏）
 ```
 
@@ -308,7 +308,7 @@ skillbrew config            # 打印解析后的配置（key 脱敏）
 
 - 首次运行 `skillbrew run` / `doctor` / `plan` 等步骤时，如果 `.env` 未配置，skillbrew 会**自动弹出交互式问答**，逐项引导你填入 API key。填完即写入 `.env`，下次不再问。
 - 在无终端环境（headless / CI / 管道）中，skillbrew 打印清晰的配置指南并继续执行（不卡死）。
-- 也可手动配置：`cp .env.example .env` → 编辑填入 key。推荐替代方案：NVIDIA NIM 免费 Qwen3.5（见 `.env.example` 注释）。
+- 也可手动配置：`cp .env.example .env` → 编辑填入 key。默认推荐 NVIDIA NIM 免费 Qwen3.5。
 
 **④ 邮件通知（可选）**
 
@@ -321,18 +321,18 @@ skillbrew config            # 打印解析后的配置（key 脱敏）
 
 | 组 | 环境变量 | 默认供应商 | 用途 |
 |----|---------|-----------|------|
-| 文本 | `TEXT_BASE_URL` / `TEXT_API_KEY` / `TEXT_MODEL` | DeepSeek（deepseek-chat） | 消化 / 执行计划 |
-| 视觉 | `VISION_BASE_URL` / `VISION_API_KEY` / `VISION_MODEL` | Agnes（agnes-1.5-flash） | 关键帧看图 |
+| 文本 | `TEXT_BASE_URL` / `TEXT_API_KEY` / `TEXT_MODEL` | NVIDIA Qwen3.5（也支持 DeepSeek / Agnes） | 消化 / 执行计划 |
+| 视觉 | `VISION_BASE_URL` / `VISION_API_KEY` / `VISION_MODEL` | 同上（文本+视觉同一模型） | 关键帧看图 |
 
 **为什么分两组配置？**
 
-- **文本组（DeepSeek）**：消化视频内容、生成执行计划、评分排序——这些是纯文本推理任务，DeepSeek 性价比高
-- **视觉组（Agnes）**：看关键帧截图、提取视频画面信息——截至 2026-06-19 实测，DeepSeek 官方 API 视觉能力暂未开放，Agnes 是当前唯一已测真看图的官方 API
+- **文本组**：消化视频内容、生成执行计划、评分排序——推荐 NVIDIA NIM Qwen3.5（免费快 50x），也支持 DeepSeek
+- **视觉组**：看关键帧截图、提取视频画面信息——同上 Qwen3.5（~6s/张，文本+视觉同一模型），旧推荐 Agnes (~5min/张) 保底可用
 - **可插拔设计（D15）**：`chat_text` / `chat_vision` 两个函数封装，换供应商只改 `.env`，代码零改动
 
-**为什么视觉用 Agnes 而不是其他？**
+**为什么默认切到 NVIDIA Qwen3.5？**
 
-截至 2026-06-19 实测，DeepSeek 官方 API 视觉能力暂未开放。我们测了多个供应商，Agnes 是当前唯一已验证能真看图的官方 API。虽然慢（~5min/张），但能完成关键帧理解任务。
+2026-06-27 实测，NVIDIA NIM 免费 API 的新模型 `qwen/qwen3.5-122b-a10b` 看图速度快 50 倍（~6s/张 vs ~5min/张），且同一模型同时支持文本和视觉。中文原生好，API 格式 OpenAI 兼容。新账号送 ~5000 credits，无需绑卡。旧默认 Agnes（~5min/张）仍可用，改 `.env` 即可切回。
 
 ---
 
