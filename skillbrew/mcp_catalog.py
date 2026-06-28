@@ -11,6 +11,7 @@
 
 下游只读，不联网、不调 LLM。
 """
+
 from __future__ import annotations
 
 import re
@@ -67,9 +68,7 @@ CATALOG: dict[str, McpEntry] = {
         repo="microsoft/playwright-mcp",
         url="https://github.com/microsoft/playwright-mcp",
         needs_runtime=True,
-        post_install_steps=(
-            "首次调用会自动下载浏览器内核（约 200MB），需联网",
-        ),
+        post_install_steps=("首次调用会自动下载浏览器内核（约 200MB），需联网",),
         invoke_hint="让 Claude 操作浏览器：打开网页、点击、填表、检查报错、跑前端流程",
     ),
     "filesystem": McpEntry(
@@ -103,9 +102,7 @@ CATALOG: dict[str, McpEntry] = {
         url="https://github.com/upstash/context7",
         env_template={"CONTEXT7_API_KEY": ""},
         optional_credential_env=("CONTEXT7_API_KEY",),
-        post_install_steps=(
-            "CONTEXT7_API_KEY 可选（无 key 也能查，有 key 额度更高）",
-        ),
+        post_install_steps=("CONTEXT7_API_KEY 可选（无 key 也能查，有 key 额度更高）",),
         invoke_hint="写代码前先查最新官方文档（Next.js/React/Prisma/Supabase 等），防模型记忆过时",
     ),
     "github": McpEntry(
@@ -158,7 +155,9 @@ def _normalize(name: str) -> str:
     s = s.replace("microsoft/", "")
     for suf in (" mcp", "-mcp", "_mcp", " server", "-server", "_server"):
         s = s.replace(suf, " ")
-    s = re.sub(r"[^a-z0-9]+", "", s)  # file system -> filesystem ; sequential-thinking -> sequentialthinking
+    s = re.sub(
+        r"[^a-z0-9]+", "", s
+    )  # file system -> filesystem ; sequential-thinking -> sequentialthinking
     # 再剥尾巴的 mcp / server（如 "playwrightmcp" -> "playwright"）
     for tail in ("mcp", "server"):
         if s.endswith(tail) and len(s) > len(tail):

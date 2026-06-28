@@ -4,6 +4,7 @@
 不真调 LLM（大语言模型）、不真起子进程。覆盖每级降级成功与失败路径，确保
 「不崩、不静默、不臆造」（D23 铁律）。
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -11,8 +12,8 @@ import subprocess
 from skillbrew import config, installer, verify
 from skillbrew.installer import InstallSpec
 
-
 # ---- 通用造数据 ----
+
 
 def _spec(**kw) -> InstallSpec:
     """造一个最小可用 InstallSpec，默认填好必填字段，kw 覆盖。"""
@@ -27,18 +28,20 @@ def _patch_github(monkeypatch, *, exists=True, files=None):
     monkeypatch.setattr(
         verify,
         "probe_repo",
-        lambda o, r: {
-            "owner": o,
-            "repo": r,
-            "full_name": f"{o}/{r}",
-            "html_url": f"https://github.com/{o}/{r}",
-            "stars": 1,
-            "default_branch": "main",
-            "description": "a mcp",
-            "pushed_at": None,
-        }
-        if exists
-        else None,
+        lambda o, r: (
+            {
+                "owner": o,
+                "repo": r,
+                "full_name": f"{o}/{r}",
+                "html_url": f"https://github.com/{o}/{r}",
+                "stars": 1,
+                "default_branch": "main",
+                "description": "a mcp",
+                "pushed_at": None,
+            }
+            if exists
+            else None
+        ),
     )
     tree = [{"path": f, "type": "blob", "size": 10} for f in (files or [])]
     monkeypatch.setattr(verify, "list_tree", lambda o, r, b: tree)
@@ -60,6 +63,7 @@ def _ok_run(monkeypatch):
 # verify_install_spec
 # ---------------------------------------------------------------------------
 
+
 def test_verify_skip_returns_ok():
     r = installer.verify_install_spec(_spec(), skip=True)
     assert r.ok is True
@@ -75,6 +79,7 @@ def test_verify_exit_zero_ok(monkeypatch):
 def test_verify_file_not_found_fails(monkeypatch):
     def fake_run(cmd, **kw):
         raise FileNotFoundError("no npx")
+
     monkeypatch.setattr(subprocess, "run", fake_run)
     r = installer.verify_install_spec(_spec(command="npx"))
     assert r.ok is False
@@ -84,6 +89,7 @@ def test_verify_file_not_found_fails(monkeypatch):
 def test_verify_timeout_is_ok_stdio(monkeypatch):
     def fake_run(cmd, **kw):
         raise subprocess.TimeoutExpired(cmd, 20)
+
     monkeypatch.setattr(subprocess, "run", fake_run)
     r = installer.verify_install_spec(_spec(command="npx", args=("-y", "pkg")))
     assert r.ok is True  # stdio 服务器超时属正常
@@ -93,6 +99,7 @@ def test_verify_timeout_is_ok_stdio(monkeypatch):
 def test_verify_not_found_signal_retries_then_fails(monkeypatch):
     def fake_run(cmd, **kw):
         return subprocess.CompletedProcess(cmd, 1, stdout=b"", stderr=b"npm ERR 404 not found")
+
     monkeypatch.setattr(subprocess, "run", fake_run)
     r = installer.verify_install_spec(_spec(command="npx", args=("-y", "ghost")))
     assert r.ok is False
@@ -102,6 +109,7 @@ def test_verify_not_found_signal_retries_then_fails(monkeypatch):
 def test_verify_nonzero_without_notfound_signal_ok(monkeypatch):
     def fake_run(cmd, **kw):
         return subprocess.CompletedProcess(cmd, 2, stdout=b"", stderr=b"unknown option --help")
+
     monkeypatch.setattr(subprocess, "run", fake_run)
     r = installer.verify_install_spec(_spec(command="npx", args=("-y", "pkg")))
     assert r.ok is True  # 包解析了，只是不认 --help
@@ -127,6 +135,7 @@ def test_verify_placeholder_arg_replaced(monkeypatch):
 # prompt_missing
 # ---------------------------------------------------------------------------
 
+
 def test_prompt_empty_missing():
     r = installer.prompt_missing(_spec(missing=[]), has_tty=True)
     assert r.filled == {}
@@ -143,6 +152,7 @@ def test_prompt_headless_skips_all():
 def test_prompt_tty_with_prompt_fn():
     def pf(var):
         return "val" if var == "A" else ""
+
     r = installer.prompt_missing(_spec(missing=["A", "B"]), has_tty=True, prompt_fn=pf)
     assert r.filled == {"A": "val"}
     assert r.skipped == ["B"]
@@ -151,8 +161,10 @@ def test_prompt_tty_with_prompt_fn():
 
 def test_prompt_fn_works_headless_too():
     """headless 但注入 prompt_fn（如 agent 在对话里转达）也能填。"""
+
     def pf(var):
         return "k"
+
     r = installer.prompt_missing(_spec(missing=["A"]), has_tty=False, prompt_fn=pf)
     assert r.filled == {"A": "k"}
     assert r.via == "tty"
@@ -161,6 +173,7 @@ def test_prompt_fn_works_headless_too():
 # ---------------------------------------------------------------------------
 # infer_install_spec
 # ---------------------------------------------------------------------------
+
 
 def test_infer_success(monkeypatch):
     _patch_github(monkeypatch, files=["README.md", "package.json"])
@@ -235,6 +248,7 @@ def test_infer_forces_env_values_empty_d14(monkeypatch):
 # ---------------------------------------------------------------------------
 # resolve_install_spec 全链
 # ---------------------------------------------------------------------------
+
 
 def test_resolve_l1_cache_hit_no_ai(monkeypatch, tmp_path):
     _cache_dir(monkeypatch, tmp_path)

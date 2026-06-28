@@ -6,6 +6,7 @@
 核心不变式（D14）：缓存文件 grep 不到任何真实 key 指纹；env_template 只存变量名、
 值恒空串。
 """
+
 from __future__ import annotations
 
 from skillbrew import config, installer

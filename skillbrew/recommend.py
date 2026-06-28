@@ -30,6 +30,7 @@ D22（反盲盒·透明可追）：报告须说清每个候选「是什么 / 值
 并单独授权（--approve），且 install 只装本模块 approved 的子集（D20）。
 纯标准库（dataclasses/datetime/typing），keyword/manual 模式不调 LLM、不耗配额、不要 key。
 """
+
 from __future__ import annotations
 
 import json
@@ -38,37 +39,38 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-
 # ---- 常量 ----
 
 # 判断步三模式（D21）
-MODE_KEYWORD = "keyword"   # 无 key、不烧 token：规则打分
-MODE_MANUAL = "manual"     # 无 key、不烧 token：人工勾选
-MODE_AI = "ai"             # 烧 token：文本模型判断（用户在场）
+MODE_KEYWORD = "keyword"  # 无 key、不烧 token：规则打分
+MODE_MANUAL = "manual"  # 无 key、不烧 token：人工勾选
+MODE_AI = "ai"  # 烧 token：文本模型判断（用户在场）
 MODES = (MODE_KEYWORD, MODE_MANUAL, MODE_AI)
 
 # 候选级判定（每条 new/merge/skip 的 verdict）
-V_WORTH = "值得装"          # 值得安装
-V_NOT_WORTH = "不值得装"    # 不值得安装
-V_INSTALLED = "已装"        # dedup 判 skip（已装/已整并），无需再判值不值得
-V_MERGE = "建议整并"        # dedup 判 merge，须人工确认整并（不自动装也不自动否）
+V_WORTH = "值得装"  # 值得安装
+V_NOT_WORTH = "不值得装"  # 不值得安装
+V_INSTALLED = "已装"  # dedup 判 skip（已装/已整并），无需再判值不值得
+V_MERGE = "建议整并"  # dedup 判 merge，须人工确认整并（不自动装也不自动否）
 CANDIDATE_VERDICTS = (V_WORTH, V_NOT_WORTH, V_INSTALLED, V_MERGE)
 
 # 源级汇总（D19 四桶 + 无需新装边角）
-SV_ALL_WORTH = "值得装"        # 所有 new 都值得 → 整源可装
-SV_PICK = "挑着装"             # new 有值得有不值得 → 挑着买（D20）
-SV_ALL_SKIP = "不值得装"       # 所有 new 都不值得
-SV_SOURCE_SKIP = "整源跳过"    # 源级信号否决（如配置商店非技能集，davila7 案例）
-SV_NOTHING_NEW = "无需新装"    # 没有 new 候选（全 skip/merge）
+SV_ALL_WORTH = "值得装"  # 所有 new 都值得 → 整源可装
+SV_PICK = "挑着装"  # new 有值得有不值得 → 挑着买（D20）
+SV_ALL_SKIP = "不值得装"  # 所有 new 都不值得
+SV_SOURCE_SKIP = "整源跳过"  # 源级信号否决（如配置商店非技能集，davila7 案例）
+SV_NOTHING_NEW = "无需新装"  # 没有 new 候选（全 skip/merge）
 SOURCE_VERDICTS = (SV_ALL_WORTH, SV_PICK, SV_ALL_SKIP, SV_SOURCE_SKIP, SV_NOTHING_NEW)
 
 
 def _now_iso() -> str:
     from datetime import datetime
+
     return datetime.now().isoformat(timespec="seconds")
 
 
 # ---- 积木 A：纯核心（数据模型 + 汇总 + 装配）------------------------------------
+
 
 @dataclass
 class Profile:
@@ -77,26 +79,30 @@ class Profile:
     各字段由 build_profile（积木 E）从 dedup.build_baseline 实时扫描填充；本核心只读
     不造，故 Profile 在此仅定契约（E 实现时填充）。
     """
-    distinct: int = 0                                   # 本机 distinct 能力数
+
+    distinct: int = 0  # 本机 distinct 能力数
     by_category: dict[str, int] = field(default_factory=dict)  # 分类计数（仅 active，可用能力分布）
-    names: set[str] = field(default_factory=set)               # 已有能力名集合（归一化 key，含 merged 防重复推）
-    keywords: set[str] = field(default_factory=set)            # 已有能力描述关键词集合
-    source: str = "disk+registry"                          # 画像来源标记
+    names: set[str] = field(default_factory=set)  # 已有能力名集合（归一化 key，含 merged 防重复推）
+    keywords: set[str] = field(default_factory=set)  # 已有能力描述关键词集合
+    source: str = "disk+registry"  # 画像来源标记
 
 
 @dataclass
 class Judgment:
     """单条候选的判断结果。"""
-    name: str                                     # 候选名（install_list 裸名）
-    decision: str                                 # dedup 判定：new / merge / skip
-    verdict: str                                  # 候选级 verdict（CANDIDATE_VERDICTS 之一）
-    reason: str                                   # 为什么这个 verdict（透明可追，D22）
-    score: float | None = None                    # keyword 打分（0~1，越高越值得）；他模 None
+
+    name: str  # 候选名（install_list 裸名）
+    decision: str  # dedup 判定：new / merge / skip
+    verdict: str  # 候选级 verdict（CANDIDATE_VERDICTS 之一）
+    reason: str  # 为什么这个 verdict（透明可追，D22）
+    score: float | None = None  # keyword 打分（0~1，越高越值得）；他模 None
     signals: list[str] = field(default_factory=list)  # 命中的判分信号（透明可追）
-    target: str = ""                              # merge/skip 的目标能力名
-    mode: str = ""                                # 由哪个模式产出（keyword/manual/ai/trivial）
-    form: str = "Skill"                           # 产物形态（Skill/MCP/...）；形态无关判值不值得，仅供 install/record 分发与展示
-    usability: str = "ready"                      # 装完即可用度（ready/needs_credentials/needs_runtime/needs_config，D22 反黑箱透明标注）
+    target: str = ""  # merge/skip 的目标能力名
+    mode: str = ""  # 由哪个模式产出（keyword/manual/ai/trivial）
+    form: str = (
+        "Skill"  # 产物形态（Skill/MCP/...）；形态无关判值不值得，仅供 install/record 分发与展示
+    )
+    usability: str = "ready"  # 装完即可用度（ready/needs_credentials/needs_runtime/needs_config，D22 反黑箱透明标注）
 
 
 def judge_trivial(decision: dict) -> Judgment | None:
@@ -111,15 +117,23 @@ def judge_trivial(decision: dict) -> Judgment | None:
     form = decision.get("form", "Skill")
     if d == "skip":
         return Judgment(
-            name=name, decision=d, verdict=V_INSTALLED,
+            name=name,
+            decision=d,
+            verdict=V_INSTALLED,
             reason=decision.get("reason", "已装/已整并"),
-            target=decision.get("target", ""), mode="trivial", form=form,
+            target=decision.get("target", ""),
+            mode="trivial",
+            form=form,
         )
     if d == "merge":
         return Judgment(
-            name=name, decision=d, verdict=V_MERGE,
+            name=name,
+            decision=d,
+            verdict=V_MERGE,
             reason=decision.get("reason", "描述重叠，建议人工确认整并"),
-            target=decision.get("target", ""), mode="trivial", form=form,
+            target=decision.get("target", ""),
+            mode="trivial",
+            form=form,
         )
     return None  # new：留给 B/D/C
 
@@ -141,7 +155,9 @@ def merge_judgments(
             j = by_name.get(name)
             if j is None:
                 j = Judgment(
-                    name=name, decision="new", verdict=V_NOT_WORTH,
+                    name=name,
+                    decision="new",
+                    verdict=V_NOT_WORTH,
                     reason="未拿到打分判断，默认不装（防静默漏判）",
                     mode="(missing)",
                     form=dec.get("form", "Skill"),
@@ -218,10 +234,7 @@ def build_usability(install_list: dict) -> dict[str, str]:
     需凭证、playwright 需运行时却被当 ready）。
     """
     items = install_list.get("items") or install_list.get("skills", [])
-    return {
-        it.get("name", ""): it.get("usability", "ready")
-        for it in items if it.get("name")
-    }
+    return {it.get("name", ""): it.get("usability", "ready") for it in items if it.get("name")}
 
 
 def rollup_source_verdict(
@@ -304,6 +317,7 @@ _DEFAULT_NOTE = (
 
 # ---- 积木 E：本机能力画像 build_profile -----------------------------------------
 
+
 def build_profile(
     skill_dirs: list[Path],
     db_path: Path | str | None = None,
@@ -332,9 +346,7 @@ def build_profile(
             by_category[cat] = by_category.get(cat, 0) + 1
         if e.get("key"):
             names.add(e["key"])
-        kw = dedup._keywords(
-            (e.get("display_name") or "") + " " + (e.get("description") or "")
-        )
+        kw = dedup._keywords((e.get("display_name") or "") + " " + (e.get("description") or ""))
         keywords |= kw
 
     return Profile(
@@ -344,12 +356,14 @@ def build_profile(
         keywords=keywords,
         source="disk+registry",
     )
+
+
 # ---- 积木 B：keyword 打分 score_keyword -----------------------------------------
 
 # category → 倾向（DASHBOARD §6 同理：未完成/个人用不该装）
-_CAT_PENALTY = ("in-progress", "personal", "deprecated")     # 扣分
+_CAT_PENALTY = ("in-progress", "personal", "deprecated")  # 扣分
 _CAT_BONUS = ("engineering", "productivity", "misc", "pre-existing")  # 微加分
-_SCORE_THRESHOLD = 0.5                                        # ≥值得装，<不值得装
+_SCORE_THRESHOLD = 0.5  # ≥值得装，<不值得装
 
 
 def score_keyword(
@@ -411,8 +425,13 @@ def score_keyword(
     verdict = V_WORTH if score >= _SCORE_THRESHOLD else V_NOT_WORTH
     reason = "；".join(signals) if signals else "无显著正负信号，中性"
     return Judgment(
-        name=name, decision="new", verdict=verdict, reason=reason,
-        score=round(score, 2), signals=signals, mode="keyword",
+        name=name,
+        decision="new",
+        verdict=verdict,
+        reason=reason,
+        score=round(score, 2),
+        signals=signals,
+        mode="keyword",
         form=candidate.get("form", "Skill"),
         usability=usability or "ready",
     )
@@ -437,14 +456,18 @@ def score_keyword_batch(
     usability = usability or {}
     return [
         score_keyword(
-            c, profile,
+            c,
+            profile,
             description=descriptions.get(c.get("name", ""), ""),
             usability=usability.get(c.get("name", ""), "ready"),
         )
         for c in candidates
         if c.get("decision") == "new"
     ]
+
+
 # ---- 积木 C：manual 人工勾选 pick_manual ----------------------------------------
+
 
 def _format_menu(candidates: list[dict], descriptions: dict[str, str]) -> str:
     lines: list[str] = []
@@ -503,16 +526,32 @@ def pick_manual(
         name = c.get("name", "")
         u = usability.get(name, "ready")
         if idx in chosen:
-            judgments.append(Judgment(
-                name=name, decision="new", verdict=V_WORTH,
-                reason="人工勾选安装", mode="manual",
-                form=c.get("form", "Skill"), usability=u))
+            judgments.append(
+                Judgment(
+                    name=name,
+                    decision="new",
+                    verdict=V_WORTH,
+                    reason="人工勾选安装",
+                    mode="manual",
+                    form=c.get("form", "Skill"),
+                    usability=u,
+                )
+            )
         else:
-            judgments.append(Judgment(
-                name=name, decision="new", verdict=V_NOT_WORTH,
-                reason="人工未勾选", mode="manual",
-                form=c.get("form", "Skill"), usability=u))
+            judgments.append(
+                Judgment(
+                    name=name,
+                    decision="new",
+                    verdict=V_NOT_WORTH,
+                    reason="人工未勾选",
+                    mode="manual",
+                    form=c.get("form", "Skill"),
+                    usability=u,
+                )
+            )
     return judgments
+
+
 # ---- 积木 D：ai LLM 判断 judge_ai（烧 token，用户在场，最后实现）------------------
 
 _AI_SYSTEM = (
@@ -651,6 +690,7 @@ def judge_ai(
 
     if chat_fn is None:
         from . import llm
+
         chat_fn = llm.chat_text
     if cfg is None:
         raise RuntimeError("ai 模式需 cfg（文本模型配置），D21 前置")
@@ -685,14 +725,25 @@ def judge_ai(
                 reason = "模型未给出该候选判断"
             # usability 从 install_list 透传的 map 取（dedup decision 不带 usability），
             # 否则 MCP 候选一律误标 ready（如 github 需凭证被当 ready）
-            judgments.append(Judgment(
-                name=name, decision="new", verdict=verdict, reason=reason, mode="ai",
-                form=c.get("form", "Skill"), usability=usability.get(name, "ready")))
+            judgments.append(
+                Judgment(
+                    name=name,
+                    decision="new",
+                    verdict=verdict,
+                    reason=reason,
+                    mode="ai",
+                    form=c.get("form", "Skill"),
+                    usability=usability.get(name, "ready"),
+                )
+            )
 
         if on_batch is not None:
             on_batch(i, n, len(batch), ok)
     return judgments
+
+
 # ---- 积木 F：doctor 自检 recommend_health（呼应 D21）-----------------------------
+
 
 def recommend_health(cfg) -> list[str]:
     """判断步三模式可用性自检（D21）。返回人话描述行，纯函数不 IO、不烧 token。

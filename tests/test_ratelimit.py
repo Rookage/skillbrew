@@ -9,6 +9,7 @@
   - _reset_buckets_for_tests 重置
   - 并发 acquire 线程安全（用确定性 fast-clock 锁序验证）
 """
+
 from __future__ import annotations
 
 import threading
@@ -20,8 +21,8 @@ import pytest
 from skillbrew import ratelimit
 from skillbrew.ratelimit import TokenBucket, classify_url
 
-
 # ---------- 基础 ----------
+
 
 @pytest.fixture(autouse=True)
 def _reset_buckets():
@@ -56,12 +57,13 @@ def test_classify_url_malformed_is_none():
 
 # ---------- TokenBucket 单线程 ----------
 
+
 def test_bucket_full_immediate_acquire():
     sleeps = []
     clock = [100.0]
-    b = TokenBucket(rate=1.0, capacity=3,
-                    time_func=lambda: clock[0],
-                    sleep_func=lambda s: sleeps.append(s))
+    b = TokenBucket(
+        rate=1.0, capacity=3, time_func=lambda: clock[0], sleep_func=lambda s: sleeps.append(s)
+    )
     for _ in range(3):
         b.acquire(1.0)
     assert sleeps == []
@@ -71,19 +73,23 @@ def test_bucket_full_immediate_acquire():
 def test_bucket_empty_must_wait():
     sleeps = []
     clock = [100.0]
-    b = TokenBucket(rate=1.0, capacity=2,
-                    time_func=lambda: clock[0],
-                    sleep_func=lambda s: sleeps.append(s))
+    b = TokenBucket(
+        rate=1.0, capacity=2, time_func=lambda: clock[0], sleep_func=lambda s: sleeps.append(s)
+    )
     b.acquire(2.0)  # 拿光
     assert abs(b.remaining()) < 1e-6
+
     # 再拿 1 个：需要等 1 秒（rate=1/s → 每秒补 1 个）
     def _advance(d):
         clock[0] += d
+
     # 把 sleep 替换成推进时钟，模拟"真睡了 s 秒"
     real_sleep = sleeps.append
+
     def fake_sleep(s):
         real_sleep(s)
         clock[0] += s
+
     b._sleep = fake_sleep
     b.acquire(1.0)
     assert sleeps == [1.0]
@@ -107,13 +113,14 @@ def test_bucket_refills_over_time():
 def test_set_remaining_clamps():
     clock = [0.0]
     b = TokenBucket(rate=1.0, capacity=5, time_func=lambda: clock[0])
-    b.set_remaining(100.0)   # 超了 capacity → clamp 到 5
+    b.set_remaining(100.0)  # 超了 capacity → clamp 到 5
     assert abs(b.remaining() - 5.0) < 1e-6
-    b.set_remaining(-3.0)   # 负 → clamp 到 0
+    b.set_remaining(-3.0)  # 负 → clamp 到 0
     assert abs(b.remaining()) < 1e-6
 
 
 # ---------- 模块级桶分发 ----------
+
 
 def test_acquire_for_url_search_consumes_search_bucket_only():
     # 用光 search 桶
@@ -126,9 +133,11 @@ def test_acquire_for_url_search_consumes_search_bucket_only():
     # 先替换 sleep 为推进时钟
     clock = [time.monotonic()]
     ratelimit._search_bucket._time = lambda: clock[0]
+
     def fake_sleep(s):
         sleeps.append(s)
         clock[0] += s
+
     ratelimit._search_bucket._sleep = fake_sleep
     ratelimit.acquire_for_url("https://api.github.com/search/repositories?q=x")
     assert sleeps, "search 桶空了必须 sleep"
@@ -148,6 +157,7 @@ def test_update_from_headers_syncs_remaining():
     # 把 core 桶设到只剩 3 个，模拟服务器权威头
     class H(dict):
         pass
+
     h = H({"X-RateLimit-Remaining": "3"})
     ratelimit.update_from_headers("https://api.github.com/repos/foo/bar", h)
     assert abs(ratelimit._core_bucket.remaining() - 3.0) < 1e-6
@@ -175,13 +185,13 @@ def test_update_from_headers_bad_value_warns_but_doesnt_crash():
 
 def test_update_from_headers_non_github_noop():
     # 非 GitHub URL 不管 headers 里有啥，不动桶
-    ratelimit.update_from_headers("https://example.com/foo",
-                                  {"X-RateLimit-Remaining": "0"})
+    ratelimit.update_from_headers("https://example.com/foo", {"X-RateLimit-Remaining": "0"})
     assert abs(ratelimit._search_bucket.remaining() - ratelimit._SEARCH_CAPACITY) < 1e-6
     assert abs(ratelimit._core_bucket.remaining() - ratelimit._CORE_CAPACITY) < 1e-6
 
 
 # ---------- 线程安全（烟雾级） ----------
+
 
 def test_concurrent_acquires_no_race():
     """N 个线程各 acquire M 次，总消耗 = N*M 个令牌；用固定 fast-clock 避免真睡。"""
@@ -193,9 +203,11 @@ def test_concurrent_acquires_no_race():
     threads = []
     n_threads = 8
     per_thread = 10
+
     def worker():
         for _ in range(per_thread):
             b.acquire(1.0)
+
     for _ in range(n_threads):
         t = threading.Thread(target=worker)
         threads.append(t)
@@ -207,6 +219,7 @@ def test_concurrent_acquires_no_race():
 
 
 # ---------- reset 工具 ----------
+
 
 def test_reset_buckets_for_tests_restores_full():
     ratelimit._core_bucket.acquire(60.0)

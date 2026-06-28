@@ -4,7 +4,9 @@
 覆盖：① 正常 JSON 数组解析+verdict 映射 ② 模型调用抛异常→整批降级不值得装
       ③ 畸形回复（无数组）→降级 ④ on_batch 回调 ⑤ 与 merge_judgments 衔接
 """
+
 import sys
+
 from skillbrew import recommend as rec
 
 
@@ -20,35 +22,63 @@ def make_profile():
 def make_decisions():
     # 5 条 new + 1 skip + 1 merge，模拟 dedup.json 的 decisions
     return [
-        {"name": "new-skill-1", "decision": "new", "category": "Productivity", "description": "一个好用的工具"},
-        {"name": "new-skill-2", "decision": "new", "category": "Coding", "description": "代码生成器"},
-        {"name": "new-skill-3", "decision": "new", "category": "Coding", "description": "和个人重复"},
+        {
+            "name": "new-skill-1",
+            "decision": "new",
+            "category": "Productivity",
+            "description": "一个好用的工具",
+        },
+        {
+            "name": "new-skill-2",
+            "decision": "new",
+            "category": "Coding",
+            "description": "代码生成器",
+        },
+        {
+            "name": "new-skill-3",
+            "decision": "new",
+            "category": "Coding",
+            "description": "和个人重复",
+        },
         {"name": "new-skill-4", "decision": "new", "category": "Misc", "description": "未完成"},
         {"name": "new-skill-5", "decision": "new", "category": "Misc", "description": "另一个"},
-        {"name": "existing-skill-a", "decision": "skip", "reason": "已装", "target": "existing-skill-a"},
+        {
+            "name": "existing-skill-a",
+            "decision": "skip",
+            "reason": "已装",
+            "target": "existing-skill-a",
+        },
         {"name": "old-thing", "decision": "merge", "reason": "重叠", "target": "existing-skill-b"},
     ]
 
 
 def make_descs():
-    return {f"new-skill-{i}": d for i, d in enumerate(
-        ["一个好用的工具", "代码生成器", "和个人重复", "未完成", "另一个"], start=1)}
+    return {
+        f"new-skill-{i}": d
+        for i, d in enumerate(
+            ["一个好用的工具", "代码生成器", "和个人重复", "未完成", "另一个"], start=1
+        )
+    }
 
 
 def test_normal():
     """① 正常：mock 返回合法 JSON 数组，5 条 new 都被判。"""
     calls = []
+
     def mock_chat(cfg, prompt, system=None, temperature=0.2, timeout=120.0):
         calls.append(prompt)
-        return '[{"name":"new-skill-1","verdict":"值得装","reason":"实用完整"},' \
-               '{"name":"new-skill-2","verdict":"值得装","reason":"代码生成有用"},' \
-               '{"name":"new-skill-3","verdict":"不值得装","reason":"与已有重叠"},' \
-               '{"name":"new-skill-4","verdict":"不值得装","reason":"未完成"},' \
-               '{"name":"new-skill-5","verdict":"值得装","reason":"可补充能力"}]'
+        return (
+            '[{"name":"new-skill-1","verdict":"值得装","reason":"实用完整"},'
+            '{"name":"new-skill-2","verdict":"值得装","reason":"代码生成有用"},'
+            '{"name":"new-skill-3","verdict":"不值得装","reason":"与已有重叠"},'
+            '{"name":"new-skill-4","verdict":"不值得装","reason":"未完成"},'
+            '{"name":"new-skill-5","verdict":"值得装","reason":"可补充能力"}]'
+        )
 
     batches = []
     js = rec.judge_ai(
-        make_decisions(), make_profile(),
+        make_decisions(),
+        make_profile(),
         descriptions=make_descs(),
         cfg=object(),  # mock 不用真 cfg
         chat_fn=mock_chat,
@@ -70,14 +100,21 @@ def test_batch_split():
     """② 分批：batch_size=2，5 条 new 应分 3 批（2+2+1），调 3 次；
     mock 只回 new-skill-1/3 两条真实名 → 匹配判值得，其余降级不值得装（防静默漏判）。"""
     calls = []
+
     def mock_chat(cfg, prompt, system=None, temperature=0.2, timeout=120.0):
         calls.append(prompt)
-        return '[{"name":"new-skill-1","verdict":"值得装","reason":"好"},' \
-               '{"name":"new-skill-3","verdict":"值得装","reason":"好"}]'
+        return (
+            '[{"name":"new-skill-1","verdict":"值得装","reason":"好"},'
+            '{"name":"new-skill-3","verdict":"值得装","reason":"好"}]'
+        )
+
     js = rec.judge_ai(
-        make_decisions(), make_profile(),
+        make_decisions(),
+        make_profile(),
         descriptions=make_descs(),
-        cfg=object(), chat_fn=mock_chat, batch_size=2,
+        cfg=object(),
+        chat_fn=mock_chat,
+        batch_size=2,
     )
     assert len(js) == 5
     assert len(calls) == 3, f"应分 3 批，实调 {len(calls)}"
@@ -91,12 +128,17 @@ def test_batch_split():
 
 def test_call_fails():
     """③ mock 抛异常 → 整批降级不值得装，不拖垮。"""
+
     def mock_chat(cfg, prompt, system=None, temperature=0.2, timeout=120.0):
         raise RuntimeError("模拟 DeepSeek 挂了")
+
     js = rec.judge_ai(
-        make_decisions(), make_profile(),
+        make_decisions(),
+        make_profile(),
         descriptions=make_descs(),
-        cfg=object(), chat_fn=mock_chat, batch_size=10,
+        cfg=object(),
+        chat_fn=mock_chat,
+        batch_size=10,
     )
     assert len(js) == 5
     assert all(j.verdict == rec.V_NOT_WORTH for j in js), "调用失败应全降级不值得装"
@@ -106,12 +148,17 @@ def test_call_fails():
 
 def test_malformed():
     """④ 畸形回复（无 JSON 数组）→ 降级。"""
+
     def mock_chat(cfg, prompt, system=None, temperature=0.2, timeout=120.0):
         return "我觉得这些都不错，可以装。没有 JSON。"
+
     js = rec.judge_ai(
-        make_decisions(), make_profile(),
+        make_decisions(),
+        make_profile(),
         descriptions=make_descs(),
-        cfg=object(), chat_fn=mock_chat, batch_size=10,
+        cfg=object(),
+        chat_fn=mock_chat,
+        batch_size=10,
     )
     assert len(js) == 5
     assert all(j.verdict == rec.V_NOT_WORTH for j in js), "畸形回复应降级不值得装"
@@ -120,12 +167,17 @@ def test_malformed():
 
 def test_wrapped_object():
     """⑤ 模型把数组包进对象 {"results":[...]} → 能抠出来。"""
+
     def mock_chat(cfg, prompt, system=None, temperature=0.2, timeout=120.0):
         return '{"results":[{"name":"new-skill-1","verdict":"值得装","reason":"好"}]}'
+
     js = rec.judge_ai(
-        make_decisions(), make_profile(),
+        make_decisions(),
+        make_profile(),
         descriptions=make_descs(),
-        cfg=object(), chat_fn=mock_chat, batch_size=10,
+        cfg=object(),
+        chat_fn=mock_chat,
+        batch_size=10,
     )
     by = {j.name: j for j in js}
     assert by["new-skill-1"].verdict == rec.V_WORTH, "包对象应抠出数组"
@@ -134,12 +186,17 @@ def test_wrapped_object():
 
 def test_merge_integration():
     """⑥ 与 merge_judgments 衔接：new_js + skip/merge → 全量 7 条 Judgment。"""
+
     def mock_chat(cfg, prompt, system=None, temperature=0.2, timeout=120.0):
         return '[{"name":"new-skill-1","verdict":"值得装","reason":"好"}]'
+
     new_js = rec.judge_ai(
-        make_decisions(), make_profile(),
+        make_decisions(),
+        make_profile(),
         descriptions=make_descs(),
-        cfg=object(), chat_fn=mock_chat, batch_size=10,
+        cfg=object(),
+        chat_fn=mock_chat,
+        batch_size=10,
     )
     all_js = rec.merge_judgments(make_decisions(), new_js)
     assert len(all_js) == 7, f"应 7 条（5 new + 1 skip + 1 merge），实得 {len(all_js)}"
@@ -154,13 +211,21 @@ def test_merge_integration():
 
 def test_limit():
     """⑦ --limit 成本控制：只判前 2 条 new，其余 merge 兜底不值得装。"""
+
     def mock_chat(cfg, prompt, system=None, temperature=0.2, timeout=120.0):
-        return '[{"name":"new-skill-1","verdict":"值得装","reason":"好"},' \
-               '{"name":"new-skill-2","verdict":"值得装","reason":"好"}]'
+        return (
+            '[{"name":"new-skill-1","verdict":"值得装","reason":"好"},'
+            '{"name":"new-skill-2","verdict":"值得装","reason":"好"}]'
+        )
+
     js = rec.judge_ai(
-        make_decisions(), make_profile(),
+        make_decisions(),
+        make_profile(),
         descriptions=make_descs(),
-        cfg=object(), chat_fn=mock_chat, batch_size=10, limit=2,
+        cfg=object(),
+        chat_fn=mock_chat,
+        batch_size=10,
+        limit=2,
     )
     assert len(js) == 2, f"limit=2 应只判 2 条，实得 {len(js)}"
     by = {j.name: j for j in js}

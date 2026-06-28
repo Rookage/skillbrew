@@ -8,16 +8,15 @@
   ⑤ 未知模型走默认 [0,2]
   ⑥ 边界值 0.0 / 1.0 / 2.0 不裁、不发 warning
 """
+
 from __future__ import annotations
 
 import warnings
 
-import pytest
-
 from skillbrew import llm
 
-
 # ---------- 范围识别 ----------
+
 
 def test_claude_range():
     """Claude 前缀模型 → [0,1]。"""
@@ -41,6 +40,7 @@ def test_unknown_defaults_to_0_2():
 
 
 # ---------- clip_temperature 行为 ----------
+
 
 def test_claude_clips_high():
     """Claude 传 1.5 → 裁到 1.0 并发 warning。"""

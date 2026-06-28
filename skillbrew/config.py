@@ -7,6 +7,7 @@
 .env 已 gitignore（D14 安全脱敏）。换供应商只改 .env，代码不动（D15 可插拔）。
 真实环境变量优先于 .env 文件（方便 CI / 临时覆盖）。
 """
+
 from __future__ import annotations
 
 import os
@@ -134,7 +135,11 @@ def detect_runtime() -> str:
     env_hint = (os.environ.get("SKILLBREW_RUNTIME") or "").strip().lower()
     if env_hint in ("claude", "codex"):
         return env_hint
-    if os.environ.get("CLAUDECODE") == "1" or os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("CLAUDE_CODE_EXECPATH"):
+    if (
+        os.environ.get("CLAUDECODE") == "1"
+        or os.environ.get("CLAUDE_CODE_SESSION_ID")
+        or os.environ.get("CLAUDE_CODE_EXECPATH")
+    ):
         return "claude"
     if os.environ.get("CODEX_HOME"):
         return "codex"
@@ -144,6 +149,7 @@ def detect_runtime() -> str:
 
 
 # ---- Claude / Codex 配置根目录 ----
+
 
 def claude_home() -> Path:
     """返回当前运行时的配置根目录（存放 INSTALLED_INDEX.md / CLAUDE.md / 等用户级文件）。
@@ -163,6 +169,7 @@ def claude_home() -> Path:
 
 
 # ---- MCP（模型上下文协议）安装相关配置 ----
+
 
 def claude_json_path() -> Path:
     """返回当前运行时的 MCP 配置文件路径。
@@ -224,7 +231,9 @@ def claude_bin() -> str | None:
         try:
             probe = subprocess.run(
                 [found, "mcp", "list"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             if probe.returncode == 0:
                 return found
@@ -237,7 +246,9 @@ def claude_bin() -> str | None:
         try:
             probe = subprocess.run(
                 [exec_env, "mcp", "list"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             if probe.returncode == 0:
                 return exec_env
@@ -246,16 +257,19 @@ def claude_bin() -> str | None:
     # 探测 Coze / Claude Code 打包路径（按当前平台取对应二进制）
     bridge = Path.home() / ".coze" / "bridge" / "lib" / "node_modules"
     import platform
+
     arch = platform.machine().lower()
     platform_tag = "linux-x64"
     if "arm64" in arch or "aarch64" in arch:
         platform_tag = "linux-arm64"
-    bundled = bridge / f"@anthropic-ai" / f"claude-agent-sdk-{platform_tag}" / "claude"
+    bundled = bridge / "@anthropic-ai" / f"claude-agent-sdk-{platform_tag}" / "claude"
     if bundled.exists() and os.access(bundled, os.X_OK):
         try:
             probe = subprocess.run(
                 [str(bundled), "mcp", "list"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             if probe.returncode == 0:
                 return str(bundled)
@@ -267,7 +281,9 @@ def claude_bin() -> str | None:
             try:
                 probe = subprocess.run(
                     [str(candidate), "mcp", "list"],
-                    capture_output=True, text=True, timeout=5,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                 )
                 if probe.returncode == 0:
                     return str(candidate)
@@ -277,6 +293,7 @@ def claude_bin() -> str | None:
 
 
 # ---- repo（克隆即用）形态安装相关配置 ----
+
 
 # 克隆即用仓库的落地根目录（镜像 ~/.claude/skills/ 的用户级约定：clone 下来的
 # 开源项目统一放这里，便于去重扫描与卸载回滚）。可用环境变量 SKILLBREW_CLONES_DIR
@@ -300,6 +317,7 @@ def repo_clones_dir() -> Path:
 
 
 # ---- D23 通用安装器：本地缓存 + 终端探测 ----
+
 
 def install_cache_path() -> Path:
     """返回 D23 通用安装器的本地缓存文件 ``data/install_cache.json``。
@@ -327,6 +345,7 @@ def has_tty() -> bool:
 
 # ---- 终端编码兜底（Windows GBK 防 print 崩，issue #5）----
 
+
 def ensure_utf8_stdout() -> None:
     """把 stdout/stderr 统一强制成 UTF-8 + errors=replace。
 
@@ -338,6 +357,6 @@ def ensure_utf8_stdout() -> None:
     """
     for stream in (sys.stdout, sys.stderr):
         try:
-            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
         except (AttributeError, ValueError, OSError):
             pass

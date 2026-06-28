@@ -8,6 +8,7 @@
 回归门禁（最关键）：默认 ai_infer=False → resolve-pass 整体跳过 → unresolved 原样
 透传、resolve_traces 为空、to_install 不被擅自塞入 —— 零行为改变。
 """
+
 from __future__ import annotations
 
 import json
@@ -17,10 +18,10 @@ from pathlib import Path
 from skillbrew import install as install_mod
 from skillbrew import installer
 
-
 # ---------------------------------------------------------------------------
 # 夹具：照 test_install_selective._build_source 搭，但 install_list 带 unresolved
 # ---------------------------------------------------------------------------
+
 
 def _build_source(tmp_path: Path, *, unresolved_entries: list[dict] | None = None) -> Path:
     """造一个最小可装源目录：install_list.json（带 unresolved）+ dedup.json。
@@ -31,10 +32,17 @@ def _build_source(tmp_path: Path, *, unresolved_entries: list[dict] | None = Non
     raw_base = "https://raw.githubusercontent.com/o/test/main"
     install_list = {
         "source_video": "BVtest",
-        "verified_repo": {"owner": "o", "repo": "test", "full_name": "o/test",
-                          "html_url": "https://github.com/o/test", "default_branch": "main",
-                          "stars": 0, "stars_observed_at": "t", "description": "",
-                          "how_resolved": "test"},
+        "verified_repo": {
+            "owner": "o",
+            "repo": "test",
+            "full_name": "o/test",
+            "html_url": "https://github.com/o/test",
+            "default_branch": "main",
+            "stars": 0,
+            "stars_observed_at": "t",
+            "description": "",
+            "how_resolved": "test",
+        },
         "branch": "main",
         "raw_base": raw_base,
         "install_method": "mcp_register",
@@ -58,14 +66,16 @@ def _build_source(tmp_path: Path, *, unresolved_entries: list[dict] | None = Non
 
 def _ghost_entries() -> list[dict]:
     """一条 catalog 未收录的 MCP unresolved 条目（带 repo/url，给 AI 推断当源头）。"""
-    return [{
-        "name": "ghost-mcp",
-        "reason": "未在 catalog",
-        "candidate": "o/ghost-mcp",
-        "source_ref": "1",
-        "repo": "o/ghost-mcp",
-        "url": "https://github.com/o/ghost-mcp",
-    }]
+    return [
+        {
+            "name": "ghost-mcp",
+            "reason": "未在 catalog",
+            "candidate": "o/ghost-mcp",
+            "source_ref": "1",
+            "repo": "o/ghost-mcp",
+            "url": "https://github.com/o/ghost-mcp",
+        }
+    ]
 
 
 def _hermetic(monkeypatch, tmp_path):
@@ -77,6 +87,7 @@ def _hermetic(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 # ① 回归门禁：默认 ai_infer=False → unresolved 原样透传、resolve_traces 空
 # ---------------------------------------------------------------------------
+
 
 def test_default_off_passthrough_unresolved(tmp_path, monkeypatch):
     """--ai-infer 关：resolve-pass 整体跳过，unresolved 一条不少、trace 空、不进 to_install。"""
@@ -106,20 +117,35 @@ def test_default_off_passthrough_unresolved(tmp_path, monkeypatch):
 # ② ai_infer=True + resolve 成功 → 进 to_install、移出 unresolved、凭证回写
 # ---------------------------------------------------------------------------
 
+
 def test_ai_infer_success_moves_to_install_and_writes_cred(tmp_path, monkeypatch):
     _hermetic(monkeypatch, tmp_path)
     src = _build_source(tmp_path, unresolved_entries=_ghost_entries())
     target = tmp_path / "skills"
     key = "SKILLBREW_TEST_GHOST_KEY"  # 唯一名，测完清掉，绝不污染 os.environ
 
-    def fake_resolve(name, *, repo=None, url=None, allow_ai=False, skip_trial=False,
-                     refresh_cache=False, has_tty=False, chat_fn=None, prompt_fn=None):
+    def fake_resolve(
+        name,
+        *,
+        repo=None,
+        url=None,
+        allow_ai=False,
+        skip_trial=False,
+        refresh_cache=False,
+        has_tty=False,
+        chat_fn=None,
+        prompt_fn=None,
+    ):
         assert name == "ghost-mcp"
         return installer.ResolveResult(
             ok=True,
             spec=installer.InstallSpec(
-                name="ghost-mcp", command="npx", args=("-y", "ghost-mcp"),
-                invoke_hint="AI 推断的幽灵工具", repo=repo, url=url,
+                name="ghost-mcp",
+                command="npx",
+                args=("-y", "ghost-mcp"),
+                invoke_hint="AI 推断的幽灵工具",
+                repo=repo,
+                url=url,
             ),
             provenance="ai",
             filled={key: "secret-val"},
@@ -131,8 +157,11 @@ def test_ai_infer_success_moves_to_install_and_writes_cred(tmp_path, monkeypatch
     assert key not in os.environ
     try:
         plan = install_mod.install(
-            src, target_dir=str(target), approve=False,
-            ai_infer=True, chat_fn=lambda p: "",
+            src,
+            target_dir=str(target),
+            approve=False,
+            ai_infer=True,
+            chat_fn=lambda p: "",
         )
         # 成功 → 进安装计划、移出 unresolved
         assert "ghost-mcp" in plan["to_install"]
@@ -153,6 +182,7 @@ def test_ai_infer_success_moves_to_install_and_writes_cred(tmp_path, monkeypatch
 # ③ ai_infer=True + resolve 失败 → 留 unresolved、写 reason/missing、不崩
 # ---------------------------------------------------------------------------
 
+
 def test_ai_infer_failure_keeps_unresolved_with_reason(tmp_path, monkeypatch):
     _hermetic(monkeypatch, tmp_path)
     src = _build_source(tmp_path, unresolved_entries=_ghost_entries())
@@ -160,15 +190,20 @@ def test_ai_infer_failure_keeps_unresolved_with_reason(tmp_path, monkeypatch):
 
     def fake_resolve(name, **kw):
         return installer.ResolveResult(
-            ok=False, reason="试跑失败：包不存在", missing=["GHOST_KEY"],
+            ok=False,
+            reason="试跑失败：包不存在",
+            missing=["GHOST_KEY"],
             trace=["L3 推断出装法", "L4 试跑失败"],
         )
 
     monkeypatch.setattr(installer, "resolve_install_spec", fake_resolve)
 
     plan = install_mod.install(
-        src, target_dir=str(target), approve=False,
-        ai_infer=True, chat_fn=lambda p: "",
+        src,
+        target_dir=str(target),
+        approve=False,
+        ai_infer=True,
+        chat_fn=lambda p: "",
     )
 
     # 失败 → 留 unresolved、不进 to_install
@@ -186,6 +221,7 @@ def test_ai_infer_failure_keeps_unresolved_with_reason(tmp_path, monkeypatch):
 # ④ resolve 抛异常 → 不崩、留 unresolved、写异常 trace（铁律：绝不中断安装）
 # ---------------------------------------------------------------------------
 
+
 def test_ai_infer_resolve_exception_does_not_crash(tmp_path, monkeypatch):
     _hermetic(monkeypatch, tmp_path)
     src = _build_source(tmp_path, unresolved_entries=_ghost_entries())
@@ -197,8 +233,11 @@ def test_ai_infer_resolve_exception_does_not_crash(tmp_path, monkeypatch):
     monkeypatch.setattr(installer, "resolve_install_spec", boom)
 
     plan = install_mod.install(
-        src, target_dir=str(target), approve=False,
-        ai_infer=True, chat_fn=lambda p: "",
+        src,
+        target_dir=str(target),
+        approve=False,
+        ai_infer=True,
+        chat_fn=lambda p: "",
     )
 
     # 异常被吞，不崩；条目仍留 unresolved
@@ -210,6 +249,7 @@ def test_ai_infer_resolve_exception_does_not_crash(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # ⑤ _write_resolve_trace sidecar 落盘验证
 # ---------------------------------------------------------------------------
+
 
 def test_write_resolve_trace_sidecar(tmp_path):
     """_write_resolve_trace 写 resolve_trace.json，结构正确、可回读。"""

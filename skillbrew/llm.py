@@ -3,6 +3,7 @@
 文本走 TEXT_* 组（DeepSeek），视觉走 VISION_* 组（Agnes）。
 两者都 OpenAI 兼容，统一用 openai SDK；换供应商只改 .env，代码不动。
 """
+
 from __future__ import annotations
 
 import base64
@@ -16,8 +17,6 @@ from openai import OpenAI
 
 from .config import Config, ProviderConfig
 from .errors import ConfigError
-from .errors import ConfigError
-
 
 # 已知模型/厂商 temperature 合法区间（按模型名/厂商标识匹配）。
 # 顺序：更具体的前缀放前面；匹配到第一条即停；都不匹配走 DEFAULT。
@@ -25,8 +24,8 @@ from .errors import ConfigError
 # 传 1.x 会直接报 400（#16 真踩过）。
 _TEMP_RANGES: list[tuple[tuple[str, ...], float, float]] = [
     (("claude-", "anthropic."), 0.0, 1.0),
-    (("gemini-",), 0.0, 2.0),       # Gemini OpenAI 兼容
-    (("deepseek-",), 0.0, 2.0),     # DeepSeek 官方
+    (("gemini-",), 0.0, 2.0),  # Gemini OpenAI 兼容
+    (("deepseek-",), 0.0, 2.0),  # DeepSeek 官方
     (("gpt-", "o1", "o3", "o4"), 0.0, 2.0),  # OpenAI
 ]
 _TEMP_DEFAULT_RANGE: tuple[float, float] = (0.0, 2.0)
@@ -88,10 +87,10 @@ def _interactive_config(p: ProviderConfig, label: str) -> None:
         _print_config_guide(label)
         return
 
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"  {label} 配置缺失")
     print(f"  当前：BASE_URL={p.base_url or '(空)'}  KEY={'***' if p.api_key else '(空)'}")
-    print(f"{'='*50}")
+    print(f"{'=' * 50}")
     print("  是否现在交互式填入？[y/N] ", end="", flush=True)
     try:
         ans = sys.stdin.readline().strip().lower()
@@ -109,7 +108,9 @@ def _interactive_config(p: ProviderConfig, label: str) -> None:
     if not p.base_url:
         val = _prompt_env("  BASE_URL", p.base_url, "https://api.deepseek.com").strip()
         if val:
-            updates["TEXT_BASE_URL" if "TEXT" in label.upper() or "文本" in label else "VISION_BASE_URL"] = val
+            updates[
+                "TEXT_BASE_URL" if "TEXT" in label.upper() or "文本" in label else "VISION_BASE_URL"
+            ] = val
     if not p.api_key:
         prefix = "TEXT" if "TEXT" in label.upper() or "文本" in label else "VISION"
         val = _prompt_env(f"  {prefix}_API_KEY", "").strip()
@@ -117,7 +118,11 @@ def _interactive_config(p: ProviderConfig, label: str) -> None:
             updates[f"{prefix}_API_KEY"] = val
     if not p.model:
         prefix = "TEXT" if "TEXT" in label.upper() or "文本" in label else "VISION"
-        val = _prompt_env(f"  {prefix}_MODEL", p.model, "deepseek-chat" if "TEXT" in label.upper() else "agnes-1.5-flash").strip()
+        val = _prompt_env(
+            f"  {prefix}_MODEL",
+            p.model,
+            "deepseek-chat" if "TEXT" in label.upper() else "agnes-1.5-flash",
+        ).strip()
         if val:
             updates[f"{prefix}_MODEL"] = val
 
@@ -142,21 +147,23 @@ def _prompt_env(name: str, current: str, default: str = "") -> str:
 
 def _print_config_guide(label: str) -> None:
     from .config import env_path
+
     env = env_path()
     print(f"\n  [{label}] 配置引导：")
     if not env.exists():
-        print(f"  1. cp .env.example .env")
+        print("  1. cp .env.example .env")
         print(f"  2. 编辑 {env}，填入你的 API key")
     else:
         print(f"  编辑 {env}，检查 TEXT_*/VISION_* 配置是否完整")
-    print(f"  🇨🇳 国内用户：DeepSeek (platform.deepseek.com) 文本模型推荐")
-    print(f"  🇬🇱 视觉模型：Agnes (platform.agnes-ai.com) 或 NVIDIA NIM (build.nvidia.com)\n")
+    print("  🇨🇳 国内用户：DeepSeek (platform.deepseek.com) 文本模型推荐")
+    print("  🇬🇱 视觉模型：Agnes (platform.agnes-ai.com) 或 NVIDIA NIM (build.nvidia.com)\n")
 
 
 def _bootstrap_env(path) -> None:
     example = path.parent / ".env.example"
     if example.exists():
         import shutil
+
         shutil.copy(example, path)
         print(f"  📋 已从 {example} 复制模板\n")
     else:
@@ -214,13 +221,13 @@ def chat_text(
     """文本对话（消化 / 执行计划用）。返回模型回复正文。"""
     client = _client(cfg.text)
     use_model = model or cfg.text.model
-    messages = []
+    messages: list[dict[str, str]] = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
-    r = client.chat.completions.create(
+    r = client.chat.completions.create(  # type: ignore[arg-type]
         model=use_model,
-        messages=messages,
+        messages=messages,  # type: ignore[arg-type]
         temperature=clip_temperature(use_model, temperature),
         timeout=timeout,
     )

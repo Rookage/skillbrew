@@ -33,6 +33,7 @@ unresolved（verify 透明降级，如 memos 无官方 MCP）→ 不在 items、
 
 纯 GitHub raw 下载（raw 不耗 API 限额）+ 标准库 + claude CLI；不调 LLM、不耗配额。
 """
+
 from __future__ import annotations
 
 import json
@@ -46,9 +47,7 @@ import urllib.request
 import warnings
 from pathlib import Path
 
-from . import config
-from . import installer
-from . import registry
+from . import config, installer, registry
 from .recommend import V_WORTH
 from .verify import parse_frontmatter  # 复用 SKILL.md frontmatter 轻量解析
 
@@ -60,6 +59,7 @@ _RETRY_BACKOFF = 2.0
 
 def _now_iso() -> str:
     from datetime import datetime
+
     return datetime.now().isoformat(timespec="seconds")
 
 
@@ -90,7 +90,7 @@ def _rel_within(skill_dir_path: str, file_path: str) -> Path:
     → Path('mocking.md')。防路径穿越：拒绝绝对路径与 .. 。
     """
     prefix = skill_dir_path.rstrip("/") + "/"
-    rel = file_path[len(prefix):] if file_path.startswith(prefix) else Path(file_path).name
+    rel = file_path[len(prefix) :] if file_path.startswith(prefix) else Path(file_path).name
     p = Path(rel)
     if p.is_absolute() or any(part == ".." for part in p.parts):
         raise RuntimeError(f"可疑路径，拒绝写入：{file_path}")
@@ -99,9 +99,18 @@ def _rel_within(skill_dir_path: str, file_path: str) -> Path:
 
 # ==================== 形态分发：Skill 整目录拷 ====================
 
-def _install_skill(conn, item: dict, decision: dict, target: Path,
-                   source_video: str, full_name: str,
-                   on_progress=None, i: int = 0, total: int = 1) -> dict:
+
+def _install_skill(
+    conn,
+    item: dict,
+    decision: dict,
+    target: Path,
+    source_video: str,
+    full_name: str,
+    on_progress=None,
+    i: int = 0,
+    total: int = 1,
+) -> dict:
     """Skill 形态：整目录从 GitHub raw 拷到 target/<name>/，登记台账。返回 installed 条目。
 
     逻辑与旧版一致（每个 skill = 其目录下全部文件，raw 下载，SKILL.md 抠 frontmatter），
@@ -129,7 +138,8 @@ def _install_skill(conn, item: dict, decision: dict, target: Path,
             except Exception:  # noqa: BLE001  frontmatter 解析失败不阻塞
                 pass
     registry.upsert_skill(
-        conn, name,
+        conn,
+        name,
         display_name=display_name,
         category=item.get("category", decision.get("category", "")),
         form=item.get("form", "Skill"),
@@ -142,11 +152,17 @@ def _install_skill(conn, item: dict, decision: dict, target: Path,
         dedup_note="dedup 判定 new，从 GitHub raw 逐文件下载安装",
         installed_at=_now_iso(),
     )
-    return {"name": name, "display_name": display_name,
-            "form": "Skill", "file_count": n_files, "path": str(dest_dir)}
+    return {
+        "name": name,
+        "display_name": display_name,
+        "form": "Skill",
+        "file_count": n_files,
+        "path": str(dest_dir),
+    }
 
 
 # ==================== 形态分发：MCP 注册 ====================
+
 
 def _credentials_configured(item: dict) -> bool:
     """needs_credentials 的 MCP 是否已在环境里配好凭证（不替用户造凭证）。
@@ -178,7 +194,9 @@ def _resolve_args(mcp: dict) -> tuple[list[str], bool]:
             sub = True
         elif "<dirs>" in a.lower():
             # <DIRS> 仅作为子串嵌在更大字符串里 → 退化为空格连接替换
-            a = a.replace("<DIRS>", " ".join(default_dirs)).replace("<dirs>", " ".join(default_dirs))
+            a = a.replace("<DIRS>", " ".join(default_dirs)).replace(
+                "<dirs>", " ".join(default_dirs)
+            )
             sub = True
             out.append(a)
         else:
@@ -218,8 +236,9 @@ def _mcp_server_config(item: dict, resolved_args: list[str]) -> dict:
     return server
 
 
-def _install_mcp_cli(bin_path: str, name: str, item: dict,
-                     scope: str, transport: str, resolved_args: list[str]) -> dict:
+def _install_mcp_cli(
+    bin_path: str, name: str, item: dict, scope: str, transport: str, resolved_args: list[str]
+) -> dict:
     """CLI-first：`claude mcp add` 注册。stdio 用 `--` 分隔 command/args，http/sse 用 -t。
 
     校验 returncode，再 `claude mcp get <name>` 确认注册成功。返回 registered_via/install_path。
@@ -243,22 +262,29 @@ def _install_mcp_cli(bin_path: str, name: str, item: dict,
     if proc.returncode != 0:
         raise RuntimeError(f"claude mcp add 失败 {name}: {(proc.stderr or proc.stdout).strip()}")
     # 确认：claude mcp get <name> 能取到（returncode 0 或名字出现在输出里都算成功）
-    getp = subprocess.run([bin_path, "mcp", "get", name],
-                          capture_output=True, text=True, timeout=_TIMEOUT)
+    getp = subprocess.run(
+        [bin_path, "mcp", "get", name], capture_output=True, text=True, timeout=_TIMEOUT
+    )
     if getp.returncode != 0 and name not in (getp.stdout + getp.stderr):
-        raise RuntimeError(f"claude mcp add 后 get 不到 {name}: {(getp.stderr or getp.stdout).strip()}")
-    return {"registered_via": "cli",
-            "install_path": f"~/.claude.json:mcpServers/{name} (scope={scope})"}
+        raise RuntimeError(
+            f"claude mcp add 后 get 不到 {name}: {(getp.stderr or getp.stdout).strip()}"
+        )
+    return {
+        "registered_via": "cli",
+        "install_path": f"~/.claude.json:mcpServers/{name} (scope={scope})",
+    }
 
 
-def _install_mcp_json_merge(name: str, item: dict, scope: str,
-                            transport: str, resolved_args: list[str]) -> dict:
+def _install_mcp_json_merge(
+    name: str, item: dict, scope: str, transport: str, resolved_args: list[str]
+) -> dict:
     """无 claude binary 时 fallback：原子合并进 ~/.claude.json（user/local）或 ./.mcp.json（project）。
 
     读 → 备份 .bak → mtime 守卫（读后写前对比，被改则重读重放本条）→ 合并 →
     写后 json.loads 校验可解析 → 失败回滚 .bak。user scope 写顶层 mcpServers。
     """
     from . import config
+
     server = _mcp_server_config(item, resolved_args)
 
     if scope == "project":  # project scope 写独立文件 ./.mcp.json
@@ -282,8 +308,10 @@ def _install_mcp_json_merge(name: str, item: dict, scope: str,
                 pdata = {}
         pdata.setdefault("mcpServers", {})[name] = server
         pm.write_text(json.dumps(pdata, ensure_ascii=False, indent=2), encoding="utf-8")
-        return {"registered_via": "json-merge",
-                "install_path": f"{pm}:mcpServers/{name} (scope=project)"}
+        return {
+            "registered_via": "json-merge",
+            "install_path": f"{pm}:mcpServers/{name} (scope=project)",
+        }
 
     cj = config.claude_json_path()
     bak = cj.with_suffix(cj.suffix + ".bak")
@@ -310,7 +338,9 @@ def _install_mcp_json_merge(name: str, item: dict, scope: str,
         data.setdefault("mcpServers", {})[name] = server
     elif scope == "local":
         cwd = str(Path.cwd())
-        data.setdefault("projects", {}).setdefault(cwd, {}).setdefault("mcpServers", {})[name] = server
+        data.setdefault("projects", {}).setdefault(cwd, {}).setdefault("mcpServers", {})[name] = (
+            server
+        )
     else:
         raise RuntimeError(f"未知 MCP scope: {scope}")
 
@@ -320,7 +350,9 @@ def _install_mcp_json_merge(name: str, item: dict, scope: str,
         if scope == "user":
             fresh.setdefault("mcpServers", {})[name] = server
         else:  # local
-            fresh.setdefault("projects", {}).setdefault(str(Path.cwd()), {}).setdefault("mcpServers", {})[name] = server
+            fresh.setdefault("projects", {}).setdefault(str(Path.cwd()), {}).setdefault(
+                "mcpServers", {}
+            )[name] = server
         data = fresh
 
     cj.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -330,11 +362,14 @@ def _install_mcp_json_merge(name: str, item: dict, scope: str,
         if bak.exists():
             cj.write_bytes(bak.read_bytes())
         raise RuntimeError(f"~/.claude.json 写后校验失败，已回滚 .bak：{name}")
-    return {"registered_via": "json-merge",
-            "install_path": f"~/.claude.json:mcpServers/{name} (scope={scope})"}
+    return {
+        "registered_via": "json-merge",
+        "install_path": f"~/.claude.json:mcpServers/{name} (scope={scope})",
+    }
 
 
 # ==================== Codex TOML MCP 注册（文本级段替换，保其它配置/注释） ====================
+
 
 def _toml_escape_string(s: str) -> str:
     """把 Python 字符串转成 TOML 基本字符串字面量（"..." 内）。仅转义必须转义的字符。"""
@@ -484,6 +519,7 @@ def _toml_read_mcp_server(text: str, name: str) -> dict | None:
     是最小可用解析器——只要能把自己写的读回来就行，通用 TOML 不承诺解析完整。
     """
     import ast
+
     escaped = _toml_escape_bare_key(name)
     header = f"[mcp_servers.{escaped}]"
     env_header = f"[mcp_servers.{escaped}.env]"
@@ -513,13 +549,13 @@ def _toml_read_mcp_server(text: str, name: str) -> dict | None:
         return j
 
     end_main = _section_end(i_main)
-    main_block = lines[i_main + 1:end_main]
+    main_block = lines[i_main + 1 : end_main]
 
     i_env = _section_start(env_header)
     env_block: list[str] = []
     if i_env >= 0:
         end_env = _section_end(i_env)
-        env_block = lines[i_env + 1:end_env]
+        env_block = lines[i_env + 1 : end_env]
 
     result: dict = {}
     for raw in main_block:
@@ -591,8 +627,9 @@ def _strip_toml_comment(v: str) -> str:
     return v
 
 
-def _install_mcp_toml_merge(name: str, item: dict, scope: str,
-                            transport: str, resolved_args: list[str]) -> dict:
+def _install_mcp_toml_merge(
+    name: str, item: dict, scope: str, transport: str, resolved_args: list[str]
+) -> dict:
     """Codex 运行时 fallback：文本级段替换写进 ~/.codex/config.toml（user scope）。
 
     不做全量 TOML 解析——只切出 ``[mcp_servers.<name>]`` 段替换，其它 section/注释/空白
@@ -600,6 +637,7 @@ def _install_mcp_toml_merge(name: str, item: dict, scope: str,
     （Codex 本身 project 配置是 .codex/config.toml，留给后续；现在按 user 写全局）。
     """
     from . import config
+
     server = _mcp_server_config(item, resolved_args)
     if scope == "project":
         # Codex 项目级配置需要放项目根 .codex/config.toml，与 Claude 的 ./.mcp.json 不同；
@@ -635,31 +673,48 @@ def _install_mcp_toml_merge(name: str, item: dict, scope: str,
         if readback is None:
             raise RuntimeError(f"写后读回找不到 [mcp_servers.{name}] 段")
         if server.get("command") and readback.get("command") != server["command"]:
-            raise RuntimeError(f"写后读回 command 不一致：{readback.get('command')!r} != {server['command']!r}")
+            raise RuntimeError(
+                f"写后读回 command 不一致：{readback.get('command')!r} != {server['command']!r}"
+            )
         if "args" in server and readback.get("args") != server["args"]:
-            raise RuntimeError(f"写后读回 args 不一致：{readback.get('args')!r} != {server['args']!r}")
+            raise RuntimeError(
+                f"写后读回 args 不一致：{readback.get('args')!r} != {server['args']!r}"
+            )
         if server.get("env"):
             if readback.get("env") != server["env"]:
-                raise RuntimeError(f"写后读回 env 不一致：{readback.get('env')!r} != {server['env']!r}")
+                raise RuntimeError(
+                    f"写后读回 env 不一致：{readback.get('env')!r} != {server['env']!r}"
+                )
         if server.get("url") and readback.get("url") != server["url"]:
             raise RuntimeError(f"写后读回 url 不一致：{readback.get('url')!r} != {server['url']!r}")
     except Exception:  # noqa: BLE001
         if bak.exists():
             cj.write_bytes(bak.read_bytes())
         raise
-    return {"registered_via": "toml-merge",
-            "install_path": f"{cj}:[mcp_servers.{name}] (scope={scope})"}
+    return {
+        "registered_via": "toml-merge",
+        "install_path": f"{cj}:[mcp_servers.{name}] (scope={scope})",
+    }
 
 
-def _install_mcp(conn, item: dict, decision: dict,
-                 source_video: str, full_name: str,
-                 resolved_args: list[str], substituted_dirs: bool,
-                 on_progress=None, i: int = 0, total: int = 1) -> dict:
+def _install_mcp(
+    conn,
+    item: dict,
+    decision: dict,
+    source_video: str,
+    full_name: str,
+    resolved_args: list[str],
+    substituted_dirs: bool,
+    on_progress=None,
+    i: int = 0,
+    total: int = 1,
+) -> dict:
     """注册一个 MCP 服务器 + 登记台账。CLI-first，无 binary 走原子 JSON 合并。
 
     返回 installed 条目 {name, form, scope, transport, registered_via, usability, path, dirs_filled}。
     """
     from . import config
+
     name = decision["name"]
     if on_progress:
         on_progress(item, i, total)
@@ -684,7 +739,8 @@ def _install_mcp(conn, item: dict, decision: dict,
     if substituted_dirs:
         dedup_note += "；<DIRS> 已默认填 cwd+home，建议按需收窄"
     registry.upsert_skill(
-        conn, name,
+        conn,
+        name,
         display_name=item.get("capability_name") or name,
         category="",
         form="MCP",
@@ -697,17 +753,26 @@ def _install_mcp(conn, item: dict, decision: dict,
         dedup_note=dedup_note,
         installed_at=_now_iso(),
     )
-    return {"name": name, "form": "MCP", "scope": scope, "transport": transport,
-            "registered_via": via["registered_via"], "usability": usability,
-            "dirs_filled": substituted_dirs, "path": via["install_path"]}
+    return {
+        "name": name,
+        "form": "MCP",
+        "scope": scope,
+        "transport": transport,
+        "registered_via": via["registered_via"],
+        "usability": usability,
+        "dirs_filled": substituted_dirs,
+        "path": via["install_path"],
+    }
 
 
 # ==================== 形态分发：repo 克隆即用 ====================
 
 # 阿里云 PyPI（Python 包索引）镜像：云电脑直连 pypi 慢、易 hang 死，统一走镜像
 _PIP_MIRROR_ARGS = [
-    "-i", "https://mirrors.aliyun.com/pypi/simple/",
-    "--trusted-host", "mirrors.aliyun.com",
+    "-i",
+    "https://mirrors.aliyun.com/pypi/simple/",
+    "--trusted-host",
+    "mirrors.aliyun.com",
 ]
 
 # 装依赖给宽裕超时：重依赖（torch/moviepy/faster-whisper 等）装包远慢于网络探测，
@@ -749,14 +814,19 @@ def _install_repo_deps(clone_dir: Path, method: str) -> dict:
             return {"installed": False, "detail": "发现 package.json 但本机无 npm，跳过（可后补）"}
         cmd, label = [npm, "install"], "npm install"
         try:
-            proc = subprocess.run(cmd, cwd=clone_dir, capture_output=True,
-                                  text=True, timeout=_DEPS_INSTALL_TIMEOUT)
+            proc = subprocess.run(
+                cmd, cwd=clone_dir, capture_output=True, text=True, timeout=_DEPS_INSTALL_TIMEOUT
+            )
         except subprocess.TimeoutExpired:
-            return {"installed": False,
-                    "detail": f"{label} 超时（{_DEPS_INSTALL_TIMEOUT:.0f}s），克隆已成功、依赖可后补"}
+            return {
+                "installed": False,
+                "detail": f"{label} 超时（{_DEPS_INSTALL_TIMEOUT:.0f}s），克隆已成功、依赖可后补",
+            }
         ok = proc.returncode == 0
-        return {"installed": ok,
-                "detail": f"{label} {'成功' if ok else '失败'}: {(proc.stderr or proc.stdout).strip()[:200]}"}
+        return {
+            "installed": ok,
+            "detail": f"{label} {'成功' if ok else '失败'}: {(proc.stderr or proc.stdout).strip()[:200]}",
+        }
 
     # pip 系：requirements.txt 直接 -r；pyproject.toml 装当前包
     base = [sys.executable, "-m", "pip", "install"]
@@ -769,39 +839,57 @@ def _install_repo_deps(clone_dir: Path, method: str) -> dict:
     def _run(extra_args):
         """跑一次 pip install；超时返回 None（调用方单独处理，不抛）。"""
         try:
-            return subprocess.run(base + extra_args + _PIP_MIRROR_ARGS, cwd=clone_dir,
-                                  capture_output=True, text=True,
-                                  timeout=_DEPS_INSTALL_TIMEOUT)
+            return subprocess.run(
+                base + extra_args + _PIP_MIRROR_ARGS,
+                cwd=clone_dir,
+                capture_output=True,
+                text=True,
+                timeout=_DEPS_INSTALL_TIMEOUT,
+            )
         except subprocess.TimeoutExpired:
             return None
 
     proc = _run([])
     if proc is None:
-        return {"installed": False,
-                "detail": f"{label} 超时（{_DEPS_INSTALL_TIMEOUT:.0f}s），克隆已成功、依赖可后补"}
+        return {
+            "installed": False,
+            "detail": f"{label} 超时（{_DEPS_INSTALL_TIMEOUT:.0f}s），克隆已成功、依赖可后补",
+        }
     if proc.returncode == 0:
         return {"installed": True, "detail": f"{label} 成功"}
 
     # 失败：命中 distutils 卸载冲突则 --ignore-installed 自愈重试一次
-    err = (proc.stderr or proc.stdout or "")
+    err = proc.stderr or proc.stdout or ""
     if "distutils" in err or "uninstall" in err:
         proc2 = _run(["--ignore-installed"])
         if proc2 is None:
-            return {"installed": False,
-                    "detail": f"{label} 重试超时（{_DEPS_INSTALL_TIMEOUT:.0f}s），克隆已成功、依赖可后补"}
+            return {
+                "installed": False,
+                "detail": f"{label} 重试超时（{_DEPS_INSTALL_TIMEOUT:.0f}s），克隆已成功、依赖可后补",
+            }
         if proc2.returncode == 0:
-            return {"installed": True,
-                    "detail": f"{label} 成功（命中 distutils 卸载冲突，--ignore-installed 重试通过）"}
+            return {
+                "installed": True,
+                "detail": f"{label} 成功（命中 distutils 卸载冲突，--ignore-installed 重试通过）",
+            }
         err2 = (proc2.stderr or proc2.stdout or "").strip()[:200]
-        return {"installed": False,
-                "detail": f"{label} 失败（--ignore-installed 重试仍失败）: {err2}"}
-    return {"installed": False,
-            "detail": f"{label} 失败: {err.strip()[:200]}"}
+        return {
+            "installed": False,
+            "detail": f"{label} 失败（--ignore-installed 重试仍失败）: {err2}",
+        }
+    return {"installed": False, "detail": f"{label} 失败: {err.strip()[:200]}"}
 
 
-def _install_repo(conn, item: dict, decision: dict,
-                  source_video: str, full_name: str,
-                  on_progress=None, i: int = 0, total: int = 1) -> dict:
+def _install_repo(
+    conn,
+    item: dict,
+    decision: dict,
+    source_video: str,
+    full_name: str,
+    on_progress=None,
+    i: int = 0,
+    total: int = 1,
+) -> dict:
     """repo 形态：git clone 到 config.repo_clones_dir()/<name>/ + 装依赖 + 登记台账。
 
     克隆即用（不改 ~/.claude/skills/）：克隆 + 装依赖即「安装」；运行所需的大模型 API key
@@ -830,17 +918,23 @@ def _install_repo(conn, item: dict, decision: dict,
         # --depth 1 浅克隆更快；先按记录的默认分支克隆，失败则退回 git 默认分支（防分支名漂移）
         proc = subprocess.run(
             [git_bin, "clone", "--depth", "1", "--branch", branch, url, str(clone_dir)],
-            capture_output=True, text=True, timeout=_TIMEOUT * 10,
+            capture_output=True,
+            text=True,
+            timeout=_TIMEOUT * 10,
         )
         if proc.returncode != 0:
             if clone_dir.exists():
                 shutil.rmtree(clone_dir, ignore_errors=True)
             proc = subprocess.run(
                 [git_bin, "clone", "--depth", "1", url, str(clone_dir)],
-                capture_output=True, text=True, timeout=_TIMEOUT * 10,
+                capture_output=True,
+                text=True,
+                timeout=_TIMEOUT * 10,
             )
             if proc.returncode != 0:
-                raise RuntimeError(f"git clone 失败 {repo_full}: {(proc.stderr or proc.stdout).strip()}")
+                raise RuntimeError(
+                    f"git clone 失败 {repo_full}: {(proc.stderr or proc.stdout).strip()}"
+                )
             clone_detail = f"git clone --depth 1 成功（记录分支 {branch} 不匹配，退回默认分支）"
         else:
             clone_detail = f"git clone --depth 1 --branch {branch} 成功"
@@ -852,7 +946,8 @@ def _install_repo(conn, item: dict, decision: dict,
     usability = item.get("usability", "ready")
     dedup_note = f"dedup 判定 new，{clone_detail}；{deps['detail']}"
     registry.upsert_skill(
-        conn, name,
+        conn,
+        name,
         display_name=name,
         category="",
         form="repo",
@@ -865,20 +960,36 @@ def _install_repo(conn, item: dict, decision: dict,
         dedup_note=dedup_note,
         installed_at=_now_iso(),
     )
-    return {"name": name, "form": "repo", "repo": repo_full, "install_method": "clone",
-            "usability": usability, "path": str(clone_dir), "branch": branch,
-            "deps_method": deps_method, "deps_installed": deps["installed"],
-            "cloned_now": cloned_now}
+    return {
+        "name": name,
+        "form": "repo",
+        "repo": repo_full,
+        "install_method": "clone",
+        "usability": usability,
+        "path": str(clone_dir),
+        "branch": branch,
+        "deps_method": deps_method,
+        "deps_installed": deps["installed"],
+        "cloned_now": cloned_now,
+    }
 
 
 # ==================== 主流程 ====================
 
+
 def install(
-    source_dir: Path, *, target_dir: Path | str | None = None,
-    db_path: Path | str | None = None, approve: bool = False,
-    include_deprecated: bool = False, on_progress=None,
-    ai_infer: bool = False, no_trial: bool = False, refresh_cache: bool = False,
-    chat_fn=None, prompt_fn=None,
+    source_dir: Path,
+    *,
+    target_dir: Path | str | None = None,
+    db_path: Path | str | None = None,
+    approve: bool = False,
+    include_deprecated: bool = False,
+    on_progress=None,
+    ai_infer: bool = False,
+    no_trial: bool = False,
+    refresh_cache: bool = False,
+    chat_fn=None,
+    prompt_fn=None,
 ) -> dict:
     """对一个源目录跑安装：读 install_list.json + dedup.json → 挑 new 按形态分发 → 登记台账。
 
@@ -956,16 +1067,22 @@ def install(
                 continue
             try:
                 rr = installer.resolve_install_spec(
-                    name, repo=u.get("repo"), url=u.get("url"),
-                    allow_ai=ai_infer, skip_trial=no_trial, refresh_cache=refresh_cache,
-                    has_tty=config.has_tty(), chat_fn=chat_fn, prompt_fn=prompt_fn,
+                    name,
+                    repo=u.get("repo"),
+                    url=u.get("url"),
+                    allow_ai=ai_infer,
+                    skip_trial=no_trial,
+                    refresh_cache=refresh_cache,
+                    has_tty=config.has_tty(),
+                    chat_fn=chat_fn,
+                    prompt_fn=prompt_fn,
                 )
             except Exception as e:  # noqa: BLE001 —— 任何级失败都不崩，绝不中断安装
                 msg = f"[{name}] resolve 异常（留 unresolved）：{e}"
                 resolve_traces.append(msg)
                 warnings.warn(msg, stacklevel=2)
                 continue
-            for t in (rr.trace or []):
+            for t in rr.trace or []:
                 resolve_traces.append(f"[{name}] {t}")
             if rr.ok and rr.spec is not None:
                 # 关键：把 prompt 补全的凭证写回 os.environ，供下游
@@ -1021,14 +1138,14 @@ def install(
             entry["command"] = mcp.get("command", "")
             entry["args"] = list(mcp.get("args") or [])  # 原样占位（<DIRS> 等），透明展示待改
             entry["credential_env"] = list(item.get("credential_env") or [])
-            entry["needs_credentials"] = (usability == "needs_credentials")
+            entry["needs_credentials"] = usability == "needs_credentials"
         elif form == "repo":
             entry["repo"] = item.get("repo", "")
             entry["url"] = item.get("url", "")
             entry["install_method"] = item.get("install_method", "clone")
             entry["branch"] = item.get("default_branch", "main")
             entry["credential_env"] = list(item.get("credential_env") or [])
-            entry["needs_credentials"] = (usability == "needs_credentials")
+            entry["needs_credentials"] = usability == "needs_credentials"
             entry["clone_target"] = str(config.repo_clones_dir() / name)
         else:
             entry["target"] = str(target / name)
@@ -1057,7 +1174,9 @@ def install(
         return plan
 
     # ---- 真装：按形态分发 + 登记 ----
-    if any((d.get("form") or by_name.get(d["name"], {}).get("form")) == "Skill" for d in to_install):
+    if any(
+        (d.get("form") or by_name.get(d["name"], {}).get("form")) == "Skill" for d in to_install
+    ):
         target.mkdir(parents=True, exist_ok=True)  # 仅 Skill 形态需要目标目录
     # db_path 默认 None → 用 registry 自己的 DB_PATH（别把 None 传进去盖掉默认值）
     conn = registry.connect(db_path if db_path is not None else registry.DB_PATH)
@@ -1074,31 +1193,67 @@ def install(
                 usability = item.get("usability", "ready")
                 # needs_credentials 且凭证未配 → 跳过真装，不替用户造凭证（D22）
                 if usability == "needs_credentials" and not _credentials_configured(item):
-                    skipped_credentials.append({
-                        "name": name, "form": "MCP",
-                        "credential_env": list(item.get("credential_env") or []),
-                        "reason": "需凭证且环境未配置，跳过真装",
-                    })
+                    skipped_credentials.append(
+                        {
+                            "name": name,
+                            "form": "MCP",
+                            "credential_env": list(item.get("credential_env") or []),
+                            "reason": "需凭证且环境未配置，跳过真装",
+                        }
+                    )
                     continue
                 resolved_args, sub_dirs = _resolve_args(item.get("mcp") or {})
                 # needs_config 且占位仍未解析 → 跳过，避免注册坏服务器
                 if _has_unresolved_placeholder(resolved_args):
-                    skipped_config.append({
-                        "name": name, "form": "MCP",
-                        "reason": "args 仍含未解析占位符 <…>，待配置后再装",
-                    })
+                    skipped_config.append(
+                        {
+                            "name": name,
+                            "form": "MCP",
+                            "reason": "args 仍含未解析占位符 <…>，待配置后再装",
+                        }
+                    )
                     continue
-                installed.append(_install_mcp(conn, item, d, source_video, full_name,
-                                              resolved_args, sub_dirs,
-                                              on_progress=on_progress, i=i, total=total))
+                installed.append(
+                    _install_mcp(
+                        conn,
+                        item,
+                        d,
+                        source_video,
+                        full_name,
+                        resolved_args,
+                        sub_dirs,
+                        on_progress=on_progress,
+                        i=i,
+                        total=total,
+                    )
+                )
             elif form == "repo":
                 # repo：克隆+装依赖即安装，needs_credentials 不跳过（key 只在跑时才用）
-                installed.append(_install_repo(conn, item, d, source_video, full_name,
-                                               on_progress=on_progress, i=i, total=total))
+                installed.append(
+                    _install_repo(
+                        conn,
+                        item,
+                        d,
+                        source_video,
+                        full_name,
+                        on_progress=on_progress,
+                        i=i,
+                        total=total,
+                    )
+                )
             else:
                 installed.append(
-                    _install_skill(conn, item, d, target, source_video, full_name,
-                                   on_progress=on_progress, i=i, total=total)
+                    _install_skill(
+                        conn,
+                        item,
+                        d,
+                        target,
+                        source_video,
+                        full_name,
+                        on_progress=on_progress,
+                        i=i,
+                        total=total,
+                    )
                 )
 
         after = before + len(installed)
@@ -1108,7 +1263,9 @@ def install(
             source_video=source_video,
             authorization_choice="install --approve",
             skills_before=before,
-            skills_added=len(installed),  # 计所有已装能力（Skill + MCP，零 migration，列名语义泛化为「能力」）
+            skills_added=len(
+                installed
+            ),  # 计所有已装能力（Skill + MCP，零 migration，列名语义泛化为「能力」）
             skills_merged=0,
             skills_after=after,
             installed_at=_now_iso(),
@@ -1178,23 +1335,27 @@ def format_plan_text(r: dict) -> str:
             tag = f"  〔装完前必做：{it['usability']}〕"
         if form == "MCP":
             args = " ".join(it.get("args", []))
-            head = (f"  - [{form}] {it['name']}  scope={it.get('scope','user')}  "
-                    f"{it.get('command','')} {args}".rstrip())
+            head = (
+                f"  - [{form}] {it['name']}  scope={it.get('scope', 'user')}  "
+                f"{it.get('command', '')} {args}".rstrip()
+            )
             lines.append(head + tag)
         elif form == "repo":
             lines.append(
-                f"  - [{form}] {it['name']}  {it.get('repo','')}  → {it.get('clone_target','')}"
-                f"（git clone --branch {it.get('branch','main')}）{tag}".rstrip()
+                f"  - [{form}] {it['name']}  {it.get('repo', '')}  → {it.get('clone_target', '')}"
+                f"（git clone --branch {it.get('branch', 'main')}）{tag}".rstrip()
             )
         else:
             lines.append(
-                f"  - [{form}] {it['name']}  → {it.get('target','')}"
-                f"（{it.get('file_count',0)} 文件）{tag}".rstrip()
+                f"  - [{form}] {it['name']}  → {it.get('target', '')}"
+                f"（{it.get('file_count', 0)} 文件）{tag}".rstrip()
             )
     if r.get("skipped_merge"):
         lines.append(f"跳过 merge（人工确认）：{len(r['skipped_merge'])} 个 → {r['skipped_merge']}")
     if r.get("skipped_deprecated"):
-        lines.append(f"跳过 deprecated：{len(r['skipped_deprecated'])} 个 → {r['skipped_deprecated']}（--include-deprecated 可装）")
+        lines.append(
+            f"跳过 deprecated：{len(r['skipped_deprecated'])} 个 → {r['skipped_deprecated']}（--include-deprecated 可装）"
+        )
     if r.get("skipped_already"):
         lines.append(f"跳过已装/已整并：{len(r['skipped_already'])} 个")
     sna = r.get("skipped_not_approved") or []
@@ -1230,8 +1391,11 @@ def _write_resolve_trace(
 # ---- 直接运行：python -m skillbrew.install <源目录> [--approve] ----
 def _main() -> int:
     import sys
+
     if len(sys.argv) < 2:
-        print("用法: python -m skillbrew.install <源目录> [--approve] [--include-deprecated] [--target-dir DIR]")
+        print(
+            "用法: python -m skillbrew.install <源目录> [--approve] [--include-deprecated] [--target-dir DIR]"
+        )
         print("     源目录需含 install_list.json + dedup.json（先跑 verify、dedup）")
         return 1
     src = Path(sys.argv[1])
@@ -1251,15 +1415,23 @@ def _main() -> int:
         for s in installed:
             if s.get("form") == "MCP":
                 dirs = "  〔<DIRS> 已填默认目录，建议收窄〕" if s.get("dirs_filled") else ""
-                print(f"  - {s['name']}（{s.get('registered_via','')}，scope={s.get('scope','')}，"
-                      f"usability={s.get('usability','')}）→ {s.get('path','')}{dirs}")
+                print(
+                    f"  - {s['name']}（{s.get('registered_via', '')}，scope={s.get('scope', '')}，"
+                    f"usability={s.get('usability', '')}）→ {s.get('path', '')}{dirs}"
+                )
             elif s.get("form") == "repo":
                 cloned = "新克隆" if s.get("cloned_now") else "已存在(幂等跳过)"
-                deps = "依赖✅" if s.get("deps_installed") else f"依赖待补({s.get('deps_method','none')})"
-                print(f"  - {s['name']}（{s.get('repo','')}@{s.get('branch','main')}，{cloned}，{deps}，"
-                      f"usability={s.get('usability','')}）→ {s.get('path','')}")
+                deps = (
+                    "依赖✅"
+                    if s.get("deps_installed")
+                    else f"依赖待补({s.get('deps_method', 'none')})"
+                )
+                print(
+                    f"  - {s['name']}（{s.get('repo', '')}@{s.get('branch', 'main')}，{cloned}，{deps}，"
+                    f"usability={s.get('usability', '')}）→ {s.get('path', '')}"
+                )
             else:
-                print(f"  - {s['name']}（{s.get('file_count',0)} 文件）→ {s.get('path','')}")
+                print(f"  - {s['name']}（{s.get('file_count', 0)} 文件）→ {s.get('path', '')}")
         print(f"   {r.get('note', '')}")
     else:
         print("\n   " + r.get("note", ""))

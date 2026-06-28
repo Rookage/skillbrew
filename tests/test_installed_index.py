@@ -1,12 +1,12 @@
 """R1 调度器 MVP：已装能力索引 INSTALLED_INDEX.md + CLAUDE.md sentinel 注入测试。"""
+
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 from skillbrew import record as record_mod
-from skillbrew import config, registry
+from skillbrew import registry
 
 
 def _make_source(tmp_path: Path, items: list[dict], decisions: list[dict]) -> Path:
@@ -18,10 +18,17 @@ def _make_source(tmp_path: Path, items: list[dict], decisions: list[dict]) -> Pa
             f.setdefault("raw_url", f"{raw_base}/{f['path']}")
     install_list = {
         "source_video": "BVtest",
-        "verified_repo": {"owner": "o", "repo": "r", "full_name": "o/r",
-                          "html_url": "https://github.com/o/r", "default_branch": "main",
-                          "stars": 0, "stars_observed_at": "t", "description": "",
-                          "how_resolved": "test"},
+        "verified_repo": {
+            "owner": "o",
+            "repo": "r",
+            "full_name": "o/r",
+            "html_url": "https://github.com/o/r",
+            "default_branch": "main",
+            "stars": 0,
+            "stars_observed_at": "t",
+            "description": "",
+            "how_resolved": "test",
+        },
         "branch": "main",
         "raw_base": raw_base,
         "install_method": "per_file_raw_download",
@@ -37,9 +44,7 @@ def _make_source(tmp_path: Path, items: list[dict], decisions: list[dict]) -> Pa
         "summary": {},
         "baseline": {"skill_dirs": []},
     }
-    source.joinpath("dedup.json").write_text(
-        json.dumps(dd, ensure_ascii=False), encoding="utf-8"
-    )
+    source.joinpath("dedup.json").write_text(json.dumps(dd, ensure_ascii=False), encoding="utf-8")
     return source
 
 
@@ -52,14 +57,7 @@ def _preseed_skill(skills_dir: Path, name: str, desc: str) -> Path:
     """在 skills_dir 放一个 SKILL.md（带 frontmatter description），返回 install_path。"""
     p = skills_dir / name
     p.mkdir(parents=True, exist_ok=True)
-    sk = (
-        "---\n"
-        f"name: {name}\n"
-        f'description: "{desc}"\n'
-        "---\n"
-        f"# {name}\n"
-        f"{desc} 的正文...\n"
-    )
+    sk = f'---\nname: {name}\ndescription: "{desc}"\n---\n# {name}\n{desc} 的正文...\n'
     (p / "SKILL.md").write_text(sk, encoding="utf-8")
     return p
 
@@ -71,11 +69,18 @@ def _preseed_registry(db_path: Path, skills: list[dict]) -> None:
             conn.execute(
                 "INSERT INTO skills (name,display_name,category,form,source,install_path,"
                 "file_count,status,notes,installed_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (s["name"], s.get("display_name") or s["name"], s.get("category", "misc"),
-                 s.get("form", "Skill"), s.get("source", "test"),
-                 s.get("install_path") or "", s.get("file_count", 1),
-                 s.get("status", "active"), s.get("notes", ""),
-                 s.get("installed_at", "2026-06-23T00:00:00")),
+                (
+                    s["name"],
+                    s.get("display_name") or s["name"],
+                    s.get("category", "misc"),
+                    s.get("form", "Skill"),
+                    s.get("source", "test"),
+                    s.get("install_path") or "",
+                    s.get("file_count", 1),
+                    s.get("status", "active"),
+                    s.get("notes", ""),
+                    s.get("installed_at", "2026-06-23T00:00:00"),
+                ),
             )
         conn.commit()
     finally:
@@ -90,11 +95,19 @@ def test_record_writes_installed_index_and_claude_md(tmp_path, monkeypatch):
     ip_a = _preseed_skill(skills_dir, "alpha", "做 A 事情的技能")
     ip_b = _preseed_skill(skills_dir, "beta", "做 B 事情的技能")
     db_path = home / ".claude" / "skillbrew-registry.sqlite3"
-    _preseed_registry(db_path, [
-        {"name": "alpha", "install_path": str(ip_a)},
-        {"name": "beta", "install_path": str(ip_b), "form": "MCP",
-         "source": "gh-mcp", "notes": "测试 MCP 条目"},
-    ])
+    _preseed_registry(
+        db_path,
+        [
+            {"name": "alpha", "install_path": str(ip_a)},
+            {
+                "name": "beta",
+                "install_path": str(ip_b),
+                "form": "MCP",
+                "source": "gh-mcp",
+                "notes": "测试 MCP 条目",
+            },
+        ],
+    )
 
     source = _make_source(tmp_path, items=[], decisions=[])
     r = record_mod.record(source, db_path=db_path)
@@ -183,8 +196,7 @@ def test_record_index_failure_does_not_crash(tmp_path, monkeypatch):
     # 这样 home.mkdir(parents=True) 必然 NotADirectoryError，触发 except 分支
     blocker = tmp_path / "blocker"
     blocker.write_text("i am a file, not a dir", encoding="utf-8")
-    monkeypatch.setattr(record_mod.config, "claude_home",
-                        lambda: blocker / ".claude")
+    monkeypatch.setattr(record_mod.config, "claude_home", lambda: blocker / ".claude")
     # 不应抛
     r = record_mod.record(source, db_path=db_path)
     assert r["record_path"]  # RECORD.md 仍应写出

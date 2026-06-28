@@ -9,19 +9,19 @@
 
 用法： python scripts/vision_keyframes.py <source_id> [max_workers]
 """
+
 from __future__ import annotations
 
 import json
 import sys
 import time
-import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from skillbrew.config import load_config
 from skillbrew import llm
+from skillbrew.config import load_config
 
 PROMPT = (
     "这是一段科技短视频里的一帧画面。请用中文简洁描述：画面里出现了什么？"
@@ -69,7 +69,9 @@ def main() -> int:
 
     cfg = load_config()
     src_dir = cfg.data_dir / "sources" / source_id
-    kfs = sorted(src_dir.glob("keyframes/kf_*.jpg"), key=lambda p: int(p.stem.split("_")[1].rstrip("s")))
+    kfs = sorted(
+        src_dir.glob("keyframes/kf_*.jpg"), key=lambda p: int(p.stem.split("_")[1].rstrip("s"))
+    )
     if not kfs:
         print(f"[ERR] 没找到关键帧: {src_dir}/keyframes/kf_*.jpg")
         return 1
@@ -87,18 +89,21 @@ def main() -> int:
             r = fut.result()
             done += 1
             tag = "OK " if r["ok"] else "FAIL"
-            print(f"  [{done}/{len(kfs)}] {tag} {r['file']}  {r['elapsed']}s  尝试{r.get('attempts',1)}次", flush=True)
+            print(
+                f"  [{done}/{len(kfs)}] {tag} {r['file']}  {r['elapsed']}s  尝试{r.get('attempts', 1)}次",
+                flush=True,
+            )
             if r["ok"]:
                 print(f"        -> {r['desc'][:160]}", flush=True)
             else:
-                print(f"        -> 错误: {r.get('error','')}", flush=True)
+                print(f"        -> 错误: {r.get('error', '')}", flush=True)
             results.append(r)
 
     results.sort(key=lambda x: x["t"])
     out = src_dir / "keyframe_visions.json"
     out.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     ok = sum(1 for r in results if r["ok"])
-    print(f"\n完成：{ok}/{len(results)} 张成功，总耗时 {time.time()-t_all:.0f}s，结果存 {out}")
+    print(f"\n完成：{ok}/{len(results)} 张成功，总耗时 {time.time() - t_all:.0f}s，结果存 {out}")
     return 0 if ok == len(results) else 1
 
 

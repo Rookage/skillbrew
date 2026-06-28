@@ -6,4 +6,5 @@
 
 项目章程见仓库上级目录 PROJECT_CHARTER.md。
 """
+
 __version__ = "0.0.1"

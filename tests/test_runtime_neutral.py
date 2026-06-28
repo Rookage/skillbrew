@@ -8,10 +8,10 @@
 5. scan_local_mcps 尊重自定义 mcp 路径；
 6. Windows 风格路径也能被 Path 正确接受。
 """
+
 from __future__ import annotations
 
-import os
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 
 import pytest
 

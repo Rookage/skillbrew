@@ -31,12 +31,21 @@ WORKSPACE_SKILLS = ROOT.parent.parent / ".claude" / "skills"
 
 # 本次 install A 新增的 15 个 Matt skill（目录名）；tdd 是整并不算新增目录
 MATT_NEW = {
-    "productivity-grill-me", "productivity-grilling", "productivity-handoff",
-    "productivity-teach", "productivity-writing-great-skills",
-    "engineering-grill-with-docs", "engineering-domain-modeling",
-    "engineering-diagnosing-bugs", "engineering-codebase-design",
-    "engineering-implement", "engineering-prototype", "engineering-triage",
-    "engineering-to-issues", "engineering-to-prd", "engineering-resolving-merge-conflicts",
+    "productivity-grill-me",
+    "productivity-grilling",
+    "productivity-handoff",
+    "productivity-teach",
+    "productivity-writing-great-skills",
+    "engineering-grill-with-docs",
+    "engineering-domain-modeling",
+    "engineering-diagnosing-bugs",
+    "engineering-codebase-design",
+    "engineering-implement",
+    "engineering-prototype",
+    "engineering-triage",
+    "engineering-to-issues",
+    "engineering-to-prd",
+    "engineering-resolving-merge-conflicts",
 }
 
 SOURCE = "mattpocock/skills"
@@ -58,10 +67,16 @@ def main() -> None:
     for name in baseline:
         d = WORKSPACE_SKILLS / name
         upsert_skill(
-            conn, name,
-            category="pre-existing", form="Skill", source="pre-existing",
-            install_path=str(d), file_count=_file_count(d), status="active",
-            attribution="本机已装（非本次安装）", installed_at=TS,
+            conn,
+            name,
+            category="pre-existing",
+            form="Skill",
+            source="pre-existing",
+            install_path=str(d),
+            file_count=_file_count(d),
+            status="active",
+            attribution="本机已装（非本次安装）",
+            installed_at=TS,
             notes="baseline 扫描登记",
         )
 
@@ -70,35 +85,52 @@ def main() -> None:
         d = WORKSPACE_SKILLS / name
         cat = "productivity" if name.startswith("productivity-") else "engineering"
         upsert_skill(
-            conn, name,
-            category=cat, form="Skill", source=SOURCE, source_video=VIDEO,
-            install_path=str(d), file_count=_file_count(d), status="active",
-            attribution=ATTR, installed_at=TS,
+            conn,
+            name,
+            category=cat,
+            form="Skill",
+            source=SOURCE,
+            source_video=VIDEO,
+            install_path=str(d),
+            file_count=_file_count(d),
+            status="active",
+            attribution=ATTR,
+            installed_at=TS,
         )
 
     # ③ tdd 整并：方法论并入 Python测试技能，不新增独立 skill
     upsert_skill(
-        conn, "tdd",
-        display_name="tdd", category="engineering", form="Skill",
-        source=SOURCE, source_video=VIDEO,
+        conn,
+        "tdd",
+        display_name="tdd",
+        category="engineering",
+        form="Skill",
+        source=SOURCE,
+        source_video=VIDEO,
         install_path=str(WORKSPACE_SKILLS / "Python测试技能"),
-        file_count=4, status="merged", merged_into="Python测试技能",
+        file_count=4,
+        status="merged",
+        merged_into="Python测试技能",
         dedup_note="方法论（垂直切片/tracer bullet/好测试即spec）整并进 Python测试技能，红绿重构不重复",
-        attribution=ATTR, installed_at=TS,
+        attribution=ATTR,
+        installed_at=TS,
         notes="四文件（tdd-methodology.md/tests.md/mocking.md/refactoring.md）作为 Python测试技能 伴随文件",
     )
 
     # ④ 会话记录
-    before = len(baseline)   # 25
-    added = len(MATT_NEW)    # 15
-    merged = 1               # tdd
-    after = before + added   # 40
+    before = len(baseline)  # 25
+    added = len(MATT_NEW)  # 15
+    merged = 1  # tdd
+    after = before + added  # 40
     record_session(
         conn,
         session_id=f"install-a-{TS}",
-        source_video=VIDEO, authorization_choice="A",
-        skills_before=before, skills_added=added,
-        skills_merged=merged, skills_after=after,
+        source_video=VIDEO,
+        authorization_choice="A",
+        skills_before=before,
+        skills_added=added,
+        skills_merged=merged,
+        skills_after=after,
         installed_at=TS,
         notes="核心 16 个：15 净新增 + tdd 整并进 Python测试技能",
     )

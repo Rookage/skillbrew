@@ -8,10 +8,10 @@
 全离线：group_mcp_items 纯查表（不联网/不调 LLM/不耗配额，D18），不调 _probe_stars
 （stars 恒 None），故无 monkeypatch、无网络即可跑。
 """
+
 from __future__ import annotations
 
-from skillbrew import installer, verify
-from skillbrew import mcp_catalog
+from skillbrew import installer, mcp_catalog, verify
 
 
 def _plan_with_all_catalog_entries() -> dict:
@@ -48,9 +48,7 @@ def test_catalog_spec_item_roundtrip_isomorphic():
             source_ref=item["source_ref"],
             capability_name=item["capability_name"],
         )
-        assert got == item, (
-            f"{item['name']} 字段不一致:\n  got  = {got}\n  want = {item}"
-        )
+        assert got == item, f"{item['name']} 字段不一致:\n  got  = {got}\n  want = {item}"
 
 
 def test_spec_to_item_field_set_matches_group_mcp_items():
@@ -259,18 +257,21 @@ def test_miss_branch_no_repo_when_source_ref_none():
 
 def test_empty_command_goes_to_unresolved():
     """⑥ 防御：catalog 条目 command 为空 → 进 unresolved 而非产出无效 item。"""
-    import dataclasses
     from skillbrew.mcp_catalog import McpEntry
 
     # 造一个 command 为空的假条目
     bogus = McpEntry(
-        name="bogus-mcp", command="", args=(), invoke_hint="",
-        repo="o/bogus", url="https://github.com/o/bogus",
+        name="bogus-mcp",
+        command="",
+        args=(),
+        invoke_hint="",
+        repo="o/bogus",
+        url="https://github.com/o/bogus",
     )
-    catalog = mcp_catalog  # 复用真 catalog 的 lookup/suggest_candidate
     # 构造一个 catalog 对象，让 lookup 返回 bogus 条目
     # 最简单做法：monkeypatch lookup 直接返回 bogus
     import unittest.mock as mock
+
     with mock.patch.object(mcp_catalog, "lookup", return_value=bogus):
         plan = {
             "traced_sources": [{"name": "bogus-mcp"}],
@@ -302,9 +303,9 @@ def test_miss_branch_multiple_entries_mixed():
     """⑧ 混合场景：一条命中 + 一条 miss（有 repo）+ 一条 miss（无 repo）。"""
     plan = {
         "traced_sources": [
-            {"name": "sequential-thinking"},                # catalog 命中
-            {"name": "ghost/ghost-mcp"},                    # miss，有 owner/repo
-            {"name": "vague description without github"},   # miss，无 repo
+            {"name": "sequential-thinking"},  # catalog 命中
+            {"name": "ghost/ghost-mcp"},  # miss，有 owner/repo
+            {"name": "vague description without github"},  # miss，无 repo
         ],
         "capabilities": [
             {"form": "MCP", "source_ref": "1", "name": "顺序思考"},

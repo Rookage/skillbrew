@@ -80,9 +80,7 @@ def record_session(conn: sqlite3.Connection, **fields: Any) -> None:
     cols = list(fields.keys())
     vals = list(fields.values())
     placeholders = ",".join("?" * len(cols))
-    conn.execute(
-        f"INSERT INTO install_sessions ({','.join(cols)}) VALUES ({placeholders})", vals
-    )
+    conn.execute(f"INSERT INTO install_sessions ({','.join(cols)}) VALUES ({placeholders})", vals)
     conn.commit()
 
 

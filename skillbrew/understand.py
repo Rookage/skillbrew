@@ -7,6 +7,7 @@
   互相差异最大的 N 帧（限帧策略 A），保证视觉覆盖多样。
 - 对齐：每帧 ±窗口内的字幕文本，供后续消化把"画面+同期语音"一起喂 LLM。
 """
+
 from __future__ import annotations
 
 import json
@@ -76,10 +77,16 @@ def transcribe(audio_path: Path, out_dir: Path, *, model_size: str = "small") ->
         (out_dir / "transcript.txt").write_text("", encoding="utf-8")
         return {"segments": [], "text": ""}
 
-    seg_list = [{"start": round(s.start, 2), "end": round(s.end, 2), "text": s.text.strip()} for s in segs]
+    seg_list = [
+        {"start": round(s.start, 2), "end": round(s.end, 2), "text": s.text.strip()} for s in segs
+    ]
     full = "".join(s["text"] for s in seg_list)
     (out_dir / "transcript.json").write_text(
-        json.dumps({"segments": seg_list, "text": full, "language": info.language}, ensure_ascii=False, indent=2),
+        json.dumps(
+            {"segments": seg_list, "text": full, "language": info.language},
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
     (out_dir / "transcript.txt").write_text(full, encoding="utf-8")
@@ -88,11 +95,18 @@ def transcribe(audio_path: Path, out_dir: Path, *, model_size: str = "small") ->
 
 def _signatures(video_path: Path, interval: float) -> list[tuple[float, np.ndarray]]:
     """等距抽缩略图(灰度 32x24)，返回 [(时间秒, 签名向量)]。"""
-    with tempfile.TemporaryDirectory() as td:
-        td = Path(td)
+    with tempfile.TemporaryDirectory() as td_path:
+        td = Path(td_path)
         cmd = [
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-            "-i", str(video_path), "-vf", f"fps=1/{interval},scale={_THUMB_W}:{_THUMB_H},format=gray",
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(video_path),
+            "-vf",
+            f"fps=1/{interval},scale={_THUMB_W}:{_THUMB_H},format=gray",
             str(td / "s_%04d.jpg"),
         ]
         subprocess.run(cmd, check=True, capture_output=True, text=True)
@@ -145,8 +159,12 @@ def select_keyframes(
             remaining = [i for i in range(len(sigs)) if i not in chosen_idx]
             if not remaining:
                 break
-            best_i = max(remaining, key=lambda i: min(
-                float(np.mean(np.abs(sigs[i][1] - sigs[j][1]))) for j in chosen_idx))
+            best_i = max(
+                remaining,
+                key=lambda i: min(
+                    float(np.mean(np.abs(sigs[i][1] - sigs[j][1]))) for j in chosen_idx
+                ),
+            )
         chosen_idx.append(best_i)
     chosen_idx.sort(key=lambda i: sigs[i][0])
 
@@ -155,15 +173,34 @@ def select_keyframes(
     for i in chosen_idx:
         t = sigs[i][0]
         kf_path = kf_dir / f"kf_{int(t)}s.jpg"
-        subprocess.run([
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-            "-ss", str(t), "-i", str(video_path), "-frames:v", "1", "-q:v", "2", str(kf_path),
-        ], check=True, capture_output=True, text=True)
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-ss",
+                str(t),
+                "-i",
+                str(video_path),
+                "-frames:v",
+                "1",
+                "-q:v",
+                "2",
+                str(kf_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
         result.append({"t": t, "file": kf_path.name, "path": str(kf_path)})
     return result
 
 
-def align_keyframes(transcript_path: Path, keyframes: list[dict], *, window: float = 5.0) -> list[dict]:
+def align_keyframes(
+    transcript_path: Path, keyframes: list[dict], *, window: float = 5.0
+) -> list[dict]:
     """每帧 ±window 秒内的字幕文本，返回 [{t, file, nearby_subtitle}]。"""
     data = json.loads(Path(transcript_path).read_text(encoding="utf-8"))
     segs = data["segments"] if isinstance(data, dict) and "segments" in data else data
@@ -213,16 +250,23 @@ def describe_keyframes(
             try:
                 desc = llm.chat_vision(cfg, p, kf_path, timeout=timeout)
                 return {
-                    "t": t_sec, "file": kf_path.name, "ok": True,
-                    "desc": desc, "elapsed": round(time.time() - t0, 1),
+                    "t": t_sec,
+                    "file": kf_path.name,
+                    "ok": True,
+                    "desc": desc,
+                    "elapsed": round(time.time() - t0, 1),
                     "attempts": attempt + 1,
                 }
             except Exception as e:  # noqa: BLE001
                 last_err = f"{type(e).__name__}: {str(e)[:200]}"
                 time.sleep(5 * (attempt + 1))
         return {
-            "t": t_sec, "file": kf_path.name, "ok": False, "desc": "",
-            "elapsed": round(time.time() - t0, 1), "error": last_err,
+            "t": t_sec,
+            "file": kf_path.name,
+            "ok": False,
+            "desc": "",
+            "elapsed": round(time.time() - t0, 1),
+            "error": last_err,
             "attempts": 3,
         }
 
@@ -242,6 +286,7 @@ def describe_keyframes(
 # ---- 直接运行：对已获取的源做 ASR + 关键帧 + 对齐 ----
 def _main() -> int:
     import sys
+
     if len(sys.argv) < 2:
         print("用法: python -m skillbrew.understand <源目录> [--skip-asr]")
         print("     源目录需含 video.mp4 + audio.mp3（先跑 ingest）")
@@ -249,16 +294,18 @@ def _main() -> int:
     src = Path(sys.argv[1])
     skip_asr = "--skip-asr" in sys.argv
     if not skip_asr and (src / "audio.mp3").exists():
-        print(f"[ASR] {src/'audio.mp3'}（首次加载模型~160s）...")
+        print(f"[ASR] {src / 'audio.mp3'}（首次加载模型~160s）...")
         t = transcribe(src / "audio.mp3", src)
         print(f"  -> {len(t['segments'])} 段, {len(t['text'])} 字")
     print("[关键帧] farthest-point 采样 5 帧...")
     kfs = select_keyframes(src / "video.mp4", src, max_frames=5)
     align = align_keyframes(src / "transcript.json", kfs)
-    (src / "keyframes_align.json").write_text(json.dumps(align, ensure_ascii=False, indent=2), encoding="utf-8")
+    (src / "keyframes_align.json").write_text(
+        json.dumps(align, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     for a in align:
         print(f"  t={a['t']}s  字幕: {a['nearby_subtitle'][:60]}")
-    print(f"[OK] 关键帧 {len(kfs)} 张 → {src/'keyframes'}")
+    print(f"[OK] 关键帧 {len(kfs)} 张 → {src / 'keyframes'}")
     return 0
 
 

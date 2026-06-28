@@ -15,6 +15,7 @@ LLM（DeepSeek，deepseek-chat），融合成一份结构化执行计划：
   - 强约束 JSON 输出（system 指明只出 JSON；解析时容错剥 ```json 围栏）
   - temperature=0.2 求稳；模型走 cfg.text（DeepSeek），不硬编码
 """
+
 from __future__ import annotations
 
 import json
@@ -22,9 +23,9 @@ import re
 import sys
 from pathlib import Path
 
-from .config import load_config
 from . import llm
-from .errors import StepFailed, ConfigError
+from .config import load_config
+from .errors import StepFailed
 
 SYSTEM = (
     "你是 skillbrew 的消化引擎。输入是一段科技短视频的「语音字幕」和若干「关键帧视觉描述」"
@@ -60,10 +61,7 @@ SCHEMA_HINT = """\
 
 
 def _build_prompt(transcript: str, visions: list[dict]) -> str:
-    vis_text = "\n".join(
-        f"[t={v['t']}s 关键帧 {v.get('file','')}] {v['desc']}"
-        for v in visions
-    )
+    vis_text = "\n".join(f"[t={v['t']}s 关键帧 {v.get('file', '')}] {v['desc']}" for v in visions)
     return (
         f"=== 语音字幕（ASR） ===\n{transcript}\n\n"
         f"=== 关键帧视觉描述（Agnes 真看图） ===\n{vis_text}\n\n"
@@ -116,7 +114,9 @@ def digest(source_dir: Path, *, timeout: float = 180.0) -> dict:
     raw = llm.chat_text(cfg, prompt, system=SYSTEM, temperature=0.2, timeout=timeout)
     plan = _extract_json(raw)
     plan["_raw_model"] = cfg.text.model  # 留痕用的什么模型
-    (source_dir / "plan.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+    (source_dir / "plan.json").write_text(
+        json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     (source_dir / "plan_raw.txt").write_text(raw, encoding="utf-8")  # 原始回复留档便于排错
     return plan
 
@@ -125,20 +125,26 @@ def digest(source_dir: Path, *, timeout: float = 180.0) -> dict:
 def _main() -> int:
     if len(sys.argv) < 2:
         print("用法: python -m skillbrew.plan <源目录>")
-        print("     源目录需含 transcript.txt + keyframe_visions.json（先跑 understand + 视觉批处理）")
+        print(
+            "     源目录需含 transcript.txt + keyframe_visions.json（先跑 understand + 视觉批处理）"
+        )
         return 1
     src = Path(sys.argv[1])
-    print(f"[消化] DeepSeek 融合字幕 + {len(json.loads((src/'keyframe_visions.json').read_text(encoding='utf-8')))} 条视觉描述...")
+    print(
+        f"[消化] DeepSeek 融合字幕 + {len(json.loads((src / 'keyframe_visions.json').read_text(encoding='utf-8')))} 条视觉描述..."
+    )
     plan = digest(src)
-    print(f"[OK] 计划存 {src/'plan.json'}")
-    print(f"  标题: {plan.get('source_title','')}")
-    print(f"  摘要: {plan.get('summary','')}")
-    print(f"  能力 {len(plan.get('capabilities',[]))} 项:")
+    print(f"[OK] 计划存 {src / 'plan.json'}")
+    print(f"  标题: {plan.get('source_title', '')}")
+    print(f"  摘要: {plan.get('summary', '')}")
+    print(f"  能力 {len(plan.get('capabilities', []))} 项:")
     for c in plan.get("capabilities", []):
-        print(f"    - [{c.get('form','?')}] {c.get('name','')}  (依据: {c.get('evidence','')[:40]})")
-    print(f"  溯源 {len(plan.get('traced_sources',[]))} 项:")
+        print(
+            f"    - [{c.get('form', '?')}] {c.get('name', '')}  (依据: {c.get('evidence', '')[:40]})"
+        )
+    print(f"  溯源 {len(plan.get('traced_sources', []))} 项:")
     for ts in plan.get("traced_sources", []):
-        print(f"    - {ts.get('kind','')}: {ts.get('url','')}  ({ts.get('note','')[:40]})")
+        print(f"    - {ts.get('kind', '')}: {ts.get('url', '')}  ({ts.get('note', '')[:40]})")
     return 0
 
 

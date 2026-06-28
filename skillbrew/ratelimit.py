@@ -15,21 +15,22 @@ GitHub 匿名访问限额：
 线程安全：TokenBucket 自带 threading.Lock，installer/vision 的线程池里并发调用也安全。
 可测性：构造时可注入 time_func / sleep_func，测试不用真睡。
 """
+
 from __future__ import annotations
 
 import threading
 import time
 import urllib.parse
 import warnings
-from typing import Callable
+from collections.abc import Callable
 
 _API_HOST = "api.github.com"
 _SEARCH_PREFIX = "/search/"
 
 # 速率常量（匿名访问）
-_SEARCH_RATE = 10.0 / 60.0      # 每秒补 10/60 个令牌（= 10 个/分）
+_SEARCH_RATE = 10.0 / 60.0  # 每秒补 10/60 个令牌（= 10 个/分）
 _SEARCH_CAPACITY = 10
-_CORE_RATE = 60.0 / 3600.0      # 每秒补 60/3600 个令牌（= 60 个/时）
+_CORE_RATE = 60.0 / 3600.0  # 每秒补 60/3600 个令牌（= 60 个/时）
 _CORE_CAPACITY = 60
 
 

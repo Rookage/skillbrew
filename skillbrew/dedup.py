@@ -29,6 +29,7 @@ D18（章程 §4）：去重基准 = 实时扫本机已装 skill，每台机器/
 [a-z0-9] 无妨；dedup 基准含中文名 skill（GitHub工具 / GitHub趋势追踪），
 若也去 CJK 会把两者都压成 "github" 而撞键 → 必须保留 CJK（仅去标点/分隔符）。
 """
+
 from __future__ import annotations
 
 import json
@@ -47,6 +48,7 @@ _MERGE_MIN_SHARED = 3
 
 def _now_iso() -> str:
     from datetime import datetime
+
     return datetime.now().isoformat(timespec="seconds")
 
 
@@ -60,6 +62,7 @@ def _key(s: str) -> str:
 
 
 # ---- 本地扫描：扫 .claude/skills/ 各子目录，解析 SKILL.md frontmatter ----
+
 
 def scan_local_skills(skill_dirs: list[Path]) -> list[dict]:
     """扫一组 .claude/skills/ 目录，返回每个 skill 的基准信息。
@@ -88,18 +91,21 @@ def scan_local_skills(skill_dirs: list[Path]) -> list[dict]:
             except Exception:  # noqa: BLE001  frontmatter 解析失败不阻塞，退回用目录名
                 pass
             file_count = sum(1 for p in sub.rglob("*") if p.is_file())
-            out.append({
-                "name": sub.name,
-                "display_name": display_name,
-                "description": description,
-                "path": str(sub),
-                "file_count": file_count,
-                "source": "disk",
-            })
+            out.append(
+                {
+                    "name": sub.name,
+                    "display_name": display_name,
+                    "description": description,
+                    "path": str(sub),
+                    "file_count": file_count,
+                    "source": "disk",
+                }
+            )
     return out
 
 
 # ---- 本地扫描：扫已注册 MCP 服务器（user/local/project scope）----
+
 
 def _mcp_transport(cfg: dict) -> str:
     """从一条 MCP 配置推断传输方式：stdio（有 command）/ http / sse / unknown。
@@ -120,9 +126,11 @@ def _mcp_transport(cfg: dict) -> str:
     return "unknown"
 
 
-def scan_local_mcps(claude_json_path: Path | str | None = None,
-                    project_mcp_path: Path | str | None = None,
-                    cwd: str | None = None) -> list[dict]:
+def scan_local_mcps(
+    claude_json_path: Path | str | None = None,
+    project_mcp_path: Path | str | None = None,
+    cwd: str | None = None,
+) -> list[dict]:
     """扫本机已注册 MCP 服务器建基准。直接读 JSON，不依赖 CLI 输出格式（人类文本解析脆）。
 
     - user scope：~/.claude.json 顶层 mcpServers
@@ -131,6 +139,7 @@ def scan_local_mcps(claude_json_path: Path | str | None = None,
     返回 [{name, scope, transport}]，按 (name, scope) 去重。文件不存在/无 mcpServers → []。
     """
     from . import config  # 延迟导入，与 _now_iso 的 datetime 同风格
+
     out: list[dict] = []
     seen: set[tuple[str, str]] = set()
 
@@ -169,6 +178,7 @@ def scan_local_mcps(claude_json_path: Path | str | None = None,
 
 # ---- 本地扫描：扫已 clone 的「克隆即用」仓库（repo 形态）----
 
+
 def _git_origin_repo(repo_path: Path) -> str | None:
     """读 .git/config 取 origin 的 GitHub URL，解析出 owner/repo 全名。失败返回 None。
 
@@ -198,6 +208,7 @@ def scan_local_repos(clones_dir: Path | str | None = None) -> list[dict]:
     返回 [{name, repo, path, source}]，按 (repo) 去重。目录不存在 → []。
     """
     from . import config  # 延迟导入，与 scan_local_mcps 同风格
+
     out: list[dict] = []
     seen: set[str] = set()
     base = Path(clones_dir) if clones_dir else config.repo_clones_dir()
@@ -225,17 +236,20 @@ def load_registry_skills(db_path: Path | str | None = None) -> list[dict]:
         rows = registry.list_skills(conn)  # 全部状态
     finally:
         conn.close()
-    return [{
-        "name": r["name"],
-        "display_name": r.get("display_name") or r["name"],
-        "description": "",  # 台账无 description 列；merge 仅靠磁盘 skill 的描述
-        "path": r.get("install_path") or "",
-        "file_count": r.get("file_count") or 0,
-        "source": "registry",
-        "status": r.get("status", "active"),
-        "merged_into": r.get("merged_into") or "",
-        "category": r.get("category") or "",
-    } for r in rows]
+    return [
+        {
+            "name": r["name"],
+            "display_name": r.get("display_name") or r["name"],
+            "description": "",  # 台账无 description 列；merge 仅靠磁盘 skill 的描述
+            "path": r.get("install_path") or "",
+            "file_count": r.get("file_count") or 0,
+            "source": "registry",
+            "status": r.get("status", "active"),
+            "merged_into": r.get("merged_into") or "",
+            "category": r.get("category") or "",
+        }
+        for r in rows
+    ]
 
 
 def _status_counts(entries: list[dict]) -> dict:
@@ -262,12 +276,20 @@ def build_baseline(skill_dirs: list[Path], db_path: Path | str | None = None) ->
         k = _key(s["name"])
         if not k:
             continue
-        e = by_key.setdefault(k, {
-            "name": s["name"], "key": k,
-            "display_name": s.get("display_name", s["name"]),
-            "description": s.get("description", ""), "paths": [], "sources": [],
-            "status": "active", "merged_into": "", "category": s.get("category", ""),
-        })
+        e = by_key.setdefault(
+            k,
+            {
+                "name": s["name"],
+                "key": k,
+                "display_name": s.get("display_name", s["name"]),
+                "description": s.get("description", ""),
+                "paths": [],
+                "sources": [],
+                "status": "active",
+                "merged_into": "",
+                "category": s.get("category", ""),
+            },
+        )
         if s.get("path"):
             e["paths"].append(s["path"])
         if s["source"] not in e["sources"]:
@@ -290,34 +312,127 @@ def build_baseline(skill_dirs: list[Path], db_path: Path | str | None = None) ->
     repos = scan_local_repos()
     repo_keys = {r["repo"].lower() for r in repos if r.get("repo")}
     counts = {
-        "distinct": len(set(by_key.keys()) | mcp_keys | repo_keys),  # 能力去重：skill + mcp + repo 各算一个
+        "distinct": len(
+            set(by_key.keys()) | mcp_keys | repo_keys
+        ),  # 能力去重：skill + mcp + repo 各算一个
         "disk_entries": len(disk),
         "registry_rows": len(reg),
         "mcp_registered": len(mcps),
         "repo_cloned": len(repos),
         "by_status": _status_counts(entries),
     }
-    return {"entries": entries, "counts": counts, "mcps": mcps, "mcp_keys": mcp_keys,
-            "repos": repos, "repo_keys": repo_keys}
+    return {
+        "entries": entries,
+        "counts": counts,
+        "mcps": mcps,
+        "mcp_keys": mcp_keys,
+        "repos": repos,
+        "repo_keys": repo_keys,
+    }
 
 
 # ---- 描述关键词重叠（merge 候选）----
 
 _STOP = {
-    "the", "a", "an", "to", "for", "of", "in", "on", "and", "or", "when", "user",
-    "wants", "use", "used", "is", "this", "that", "with", "into", "from", "your",
-    "you", "it", "its", "as", "by", "be", "are", "was", "will", "can", "not", "but",
-    "they", "their", "them", "which", "what", "about", "more", "than", "also", "then",
-    "so", "if", "else", "up", "out", "off", "via", "any", "all", "new", "one", "two",
-    "etc", "using", "want", "needs", "need", "mention", "mentions", "session",
-    "current", "before", "after", "during", "while", "each", "both", "other", "another",
-    "has", "have", "had", "been", "being", "does", "did", "how", "why", "who", "now",
+    "the",
+    "a",
+    "an",
+    "to",
+    "for",
+    "of",
+    "in",
+    "on",
+    "and",
+    "or",
+    "when",
+    "user",
+    "wants",
+    "use",
+    "used",
+    "is",
+    "this",
+    "that",
+    "with",
+    "into",
+    "from",
+    "your",
+    "you",
+    "it",
+    "its",
+    "as",
+    "by",
+    "be",
+    "are",
+    "was",
+    "will",
+    "can",
+    "not",
+    "but",
+    "they",
+    "their",
+    "them",
+    "which",
+    "what",
+    "about",
+    "more",
+    "than",
+    "also",
+    "then",
+    "so",
+    "if",
+    "else",
+    "up",
+    "out",
+    "off",
+    "via",
+    "any",
+    "all",
+    "new",
+    "one",
+    "two",
+    "etc",
+    "using",
+    "want",
+    "needs",
+    "need",
+    "mention",
+    "mentions",
+    "session",
+    "current",
+    "before",
+    "after",
+    "during",
+    "while",
+    "each",
+    "both",
+    "other",
+    "another",
+    "has",
+    "have",
+    "had",
+    "been",
+    "being",
+    "does",
+    "did",
+    "how",
+    "why",
+    "who",
+    "now",
     # 领域泛词（skills+AI 工具台账里几乎每条描述都带，对"是否同一 skill"无判别力）：
     # 不加会把不相关的 skill 误判整并（实测：qa↔coze-file-send 共 [agent,file]、
     # ask-matt↔writing-great-skills 共 [skill,skills] 等假阳性）。真正的同名测试/技能
     # 重复由①名字命中层兜住（如 tdd 已 skip 进 Python测试技能），不靠这层泛词。
-    "skill", "skills", "agent", "claude", "code", "file", "files",
-    "issue", "issues", "test", "tests",
+    "skill",
+    "skills",
+    "agent",
+    "claude",
+    "code",
+    "file",
+    "files",
+    "issue",
+    "issues",
+    "test",
+    "tests",
 }
 
 
@@ -327,6 +442,7 @@ def _keywords(text: str) -> set[str]:
 
 
 # ---- 逐项判定 ----
+
 
 def classify(install_list: dict, baseline: dict) -> list[dict]:
     """对 install_list 每个 item 判 new/merge/skip（按 form 分发）。返回判定列表。
@@ -363,17 +479,26 @@ def classify(install_list: dict, baseline: dict) -> list[dict]:
         if form == "MCP":
             # MCP 判据：本地已注册同名服务器（_key 形态无关）→ skip，否则 new
             if ck and ck in mcp_keys:
-                decisions.append({
-                    "name": cand_name, "form": "MCP", "category": category,
-                    "decision": "skip",
-                    "reason": f"已注册：MCP {cand_name}",
-                    "target": cand_name,
-                })
+                decisions.append(
+                    {
+                        "name": cand_name,
+                        "form": "MCP",
+                        "category": category,
+                        "decision": "skip",
+                        "reason": f"已注册：MCP {cand_name}",
+                        "target": cand_name,
+                    }
+                )
             else:
-                decisions.append({
-                    "name": cand_name, "form": "MCP", "category": category,
-                    "decision": "new", "reason": "本地未注册该 MCP",
-                })
+                decisions.append(
+                    {
+                        "name": cand_name,
+                        "form": "MCP",
+                        "category": category,
+                        "decision": "new",
+                        "reason": "本地未注册该 MCP",
+                    }
+                )
             continue
 
         if form == "repo":
@@ -384,18 +509,26 @@ def classify(install_list: dict, baseline: dict) -> list[dict]:
             repo_full = s.get("repo") or ""
             rk = repo_full.lower() if repo_full else ""
             if rk and rk in repo_keys:
-                decisions.append({
-                    "name": cand_name, "form": "repo", "category": category,
-                    "decision": "skip",
-                    "reason": f"已克隆：repo {repo_full}",
-                    "target": repo_full,
-                })
+                decisions.append(
+                    {
+                        "name": cand_name,
+                        "form": "repo",
+                        "category": category,
+                        "decision": "skip",
+                        "reason": f"已克隆：repo {repo_full}",
+                        "target": repo_full,
+                    }
+                )
             else:
-                decisions.append({
-                    "name": cand_name, "form": "repo", "category": category,
-                    "decision": "new",
-                    "reason": f"本地未克隆该仓库（{repo_full or 'repo 全名缺失'}）",
-                })
+                decisions.append(
+                    {
+                        "name": cand_name,
+                        "form": "repo",
+                        "category": category,
+                        "decision": "new",
+                        "reason": f"本地未克隆该仓库（{repo_full or 'repo 全名缺失'}）",
+                    }
+                )
             continue
 
         # ---- Skill 判据（现有三层层级，每条带 form="Skill"）----
@@ -413,30 +546,42 @@ def classify(install_list: dict, baseline: dict) -> list[dict]:
 
         if hit:
             if hit["status"] == "merged":
-                decisions.append({
-                    "name": cand_name, "form": "Skill", "category": category,
-                    "decision": "skip",
-                    "reason": f"已整并进 {hit['merged_into'] or hit['name']}",
-                    "target": hit["merged_into"] or hit["name"],
-                })
+                decisions.append(
+                    {
+                        "name": cand_name,
+                        "form": "Skill",
+                        "category": category,
+                        "decision": "skip",
+                        "reason": f"已整并进 {hit['merged_into'] or hit['name']}",
+                        "target": hit["merged_into"] or hit["name"],
+                    }
+                )
             elif hit["name"] == cand_name:
-                decisions.append({
-                    "name": cand_name, "form": "Skill", "category": category,
-                    "decision": "skip",
-                    "reason": f"已装：{hit['name']}",
-                    "target": hit["name"],
-                })
+                decisions.append(
+                    {
+                        "name": cand_name,
+                        "form": "Skill",
+                        "category": category,
+                        "decision": "skip",
+                        "reason": f"已装：{hit['name']}",
+                        "target": hit["name"],
+                    }
+                )
             else:
-                decisions.append({
-                    "name": cand_name, "form": "Skill", "category": category,
-                    "decision": "skip",
-                    "reason": f"已装：{hit['name']}（裸名 {cand_name} 的分类前缀变体）",
-                    "target": hit["name"],
-                })
+                decisions.append(
+                    {
+                        "name": cand_name,
+                        "form": "Skill",
+                        "category": category,
+                        "decision": "skip",
+                        "reason": f"已装：{hit['name']}（裸名 {cand_name} 的分类前缀变体）",
+                        "target": hit["name"],
+                    }
+                )
             continue
 
         # ② 描述关键词重叠 → merge 候选（取重叠最多的，建议人工确认）
-        best, best_shared = None, set()
+        best, best_shared = None, set()  # type: ignore[var-annotated]
         for e, kw in base_kw:
             if not kw or not cand_kw:
                 continue
@@ -444,25 +589,39 @@ def classify(install_list: dict, baseline: dict) -> list[dict]:
             if len(shared) >= _MERGE_MIN_SHARED and len(shared) > len(best_shared):
                 best, best_shared = e, shared
         if best:
-            decisions.append({
-                "name": cand_name, "form": "Skill", "category": category,
-                "decision": "merge",
-                "reason": f"描述重叠 {sorted(best_shared)}，建议整并进 {best['name']}（需人工确认）",
-                "target": best["name"],
-                "shared": sorted(best_shared),
-            })
+            decisions.append(
+                {
+                    "name": cand_name,
+                    "form": "Skill",
+                    "category": category,
+                    "decision": "merge",
+                    "reason": f"描述重叠 {sorted(best_shared)}，建议整并进 {best['name']}（需人工确认）",
+                    "target": best["name"],
+                    "shared": sorted(best_shared),
+                }
+            )
             continue
 
         # ③ 新装
-        decisions.append({
-            "name": cand_name, "form": "Skill", "category": category,
-            "decision": "new", "reason": "无匹配，新装",
-        })
+        decisions.append(
+            {
+                "name": cand_name,
+                "form": "Skill",
+                "category": category,
+                "decision": "new",
+                "reason": "无匹配，新装",
+            }
+        )
     return decisions
 
 
-def dedup(source_dir: Path, *, skill_dirs: list[Path] | None = None,
-          db_path: Path | str | None = None, on_progress=None) -> dict:
+def dedup(
+    source_dir: Path,
+    *,
+    skill_dirs: list[Path] | None = None,
+    db_path: Path | str | None = None,
+    on_progress=None,
+) -> dict:
     """对一个源目录跑去重：读 install_list.json → 建基准 → 逐项判定 → 写 dedup.json。
 
     返回报告 dict（含 dedup_path）。dedup 纯本地（磁盘+台账），不调 LLM、不安装。
@@ -527,6 +686,7 @@ def dedup(source_dir: Path, *, skill_dirs: list[Path] | None = None,
 # ---- 直接运行：python -m skillbrew.dedup <源目录> [--skills-dir DIR ...] ----
 def _main() -> int:
     import sys
+
     if len(sys.argv) < 2:
         print("用法: python -m skillbrew.dedup <源目录> [--skills-dir DIR ...]")
         print("     源目录需含 install_list.json（先跑 verify）")
@@ -544,9 +704,13 @@ def _main() -> int:
     r = dedup(src, skill_dirs=[Path(d) for d in dirs] or None)
     bc = r["baseline"]["counts"]
     repo_n = bc.get("repo_cloned", 0)
-    print(f"[OK] 基准 {bc['distinct']} 个 distinct（磁盘 {bc['disk_entries']} + 台账 {bc['registry_rows']} + 已注册 MCP {bc['mcp_registered']} + 已克隆 repo {repo_n}）")
+    print(
+        f"[OK] 基准 {bc['distinct']} 个 distinct（磁盘 {bc['disk_entries']} + 台账 {bc['registry_rows']} + 已注册 MCP {bc['mcp_registered']} + 已克隆 repo {repo_n}）"
+    )
     forms = " ".join(f"{k}={v}" for k, v in r["by_form"].items()) or "—"
-    print(f"     new={r['summary']['new']}  merge={r['summary']['merge']}  skip={r['summary']['skip']}  [{forms}]")
+    print(
+        f"     new={r['summary']['new']}  merge={r['summary']['merge']}  skip={r['summary']['skip']}  [{forms}]"
+    )
     if r.get("unresolved"):
         print(f"     unresolved={len(r['unresolved'])}（catalog miss，透传交用户定夺）")
     print(f"     报告 → {r['dedup_path']}")

@@ -51,6 +51,7 @@ D23 又不破 D18。
 ``verify_install_spec``/``prompt_missing``/``resolve_install_spec`` 四级降级链）均已实现；
 下游 install.py 接入 + cli 开关 + record 展示为后续步骤。
 """
+
 from __future__ import annotations
 
 import json
@@ -215,9 +216,7 @@ def from_catalog_entry(entry: McpEntry) -> InstallSpec:
     )
 
 
-def spec_to_item(
-    spec: InstallSpec, *, source_ref=None, capability_name: str = ""
-) -> dict:
+def spec_to_item(spec: InstallSpec, *, source_ref=None, capability_name: str = "") -> dict:
     """唯一的 item 字典构造器：把 ``InstallSpec`` 转成与 ``verify.py`` group_mcp_items
     命中分支【字段同构】的 item dict。
 
@@ -250,9 +249,7 @@ def spec_to_item(
         "usability": _usability_of(spec),
         "credential_env": list(spec.credential_env) if spec.credential_env else None,
         "env_template": dict(spec.env_template) if spec.env_template else {},
-        "post_install_steps": list(spec.post_install_steps)
-        if spec.post_install_steps
-        else [],
+        "post_install_steps": list(spec.post_install_steps) if spec.post_install_steps else [],
         "invoke_hint": spec.invoke_hint,
         "source_ref": source_ref,
         "capability_name": capability_name,
@@ -497,13 +494,17 @@ def resolve_install_spec(
             )
         if chat_fn is None:
             return ResolveResult(
-                ok=False, reason="未提供 chat_fn，无法 AI 推断", trace=trace,
+                ok=False,
+                reason="未提供 chat_fn，无法 AI 推断",
+                trace=trace,
             )
-        infer_res = infer_install_spec(repo or url, chat_fn, url=url)
+        infer_res = infer_install_spec(repo or url or "", chat_fn, url=url)
         trace.extend(infer_res.trace)
         if not infer_res.ok or infer_res.spec is None:
             return ResolveResult(
-                ok=False, reason=f"AI 推断失败：{infer_res.reason}", trace=trace,
+                ok=False,
+                reason=f"AI 推断失败：{infer_res.reason}",
+                trace=trace,
             )
         spec = infer_res.spec
 
@@ -511,7 +512,9 @@ def resolve_install_spec(
         trace.append(f"L4 试跑：ok={vr.ok} attempts={vr.attempts} reason={vr.reason}")
         if not vr.ok:
             return ResolveResult(
-                ok=False, reason=f"试跑未通过：{vr.reason}", trace=trace + vr.trace,
+                ok=False,
+                reason=f"试跑未通过：{vr.reason}",
+                trace=trace + vr.trace,
             )
         if skip_trial:
             trace.append("用户选择跳过试跑，装法未验证、不入缓存")
@@ -529,9 +532,7 @@ def resolve_install_spec(
     filled: dict[str, str] = {}
     if spec.missing:
         pr = prompt_missing(spec, has_tty, prompt_fn)
-        trace.append(
-            f"L5 补全缺项：via={pr.via} filled={list(pr.filled)} skipped={pr.skipped}"
-        )
+        trace.append(f"L5 补全缺项：via={pr.via} filled={list(pr.filled)} skipped={pr.skipped}")
         spec = replace(spec, missing=list(pr.skipped))
         filled = dict(pr.filled)
 
@@ -617,8 +618,14 @@ def _fetch_install_hints(
         elif base in _CANDIDATE_BASES:
             picked.setdefault(base, p)
     priority = [
-        "readme", "package.json", "pyproject.toml", "setup.py",
-        "dockerfile", ".env.example", "requirements.txt", "docker-compose.yml",
+        "readme",
+        "package.json",
+        "pyproject.toml",
+        "setup.py",
+        "dockerfile",
+        ".env.example",
+        "requirements.txt",
+        "docker-compose.yml",
     ]
     snippets: dict[str, str] = {}
     for key in priority:
@@ -667,9 +674,7 @@ JSON 字段：
 - 只输出 JSON 对象本身，不要前后加任何文字。"""
 
 
-def _build_infer_prompt(
-    owner: str, repo: str, html_url: str, snippets: dict[str, str]
-) -> str:
+def _build_infer_prompt(owner: str, repo: str, html_url: str, snippets: dict[str, str]) -> str:
     parts = [f"仓库：{owner}/{repo}\n地址：{html_url}\n"]
     for path, content in snippets.items():
         parts.append(f"=== {path} ===\n{content}\n")
@@ -677,9 +682,7 @@ def _build_infer_prompt(
     return _INFER_SYSTEM + "\n\n" + "\n".join(parts)
 
 
-def _spec_from_ai_dict(
-    d, *, repo: str, url: str | None, trace: list[str]
-) -> InstallSpec:
+def _spec_from_ai_dict(d, *, repo: str, url: str | None, trace: list[str]) -> InstallSpec:
     """AI 输出的 JSON dict → ``InstallSpec``（``provenance="ai_unverified"``）。
 
     D14 卫生：``env_template`` 值强制清空（AI 若误填 key 也抹掉），只留变量名；所有
@@ -693,16 +696,12 @@ def _spec_from_ai_dict(
     name = re.sub(r"[^a-zA-Z0-9_-]", "-", name)
     command = str(d.get("command") or "").strip()
     if not name or not command:
-        raise ValueError(
-            f"缺必填字段 name/command（name={name!r} command={command!r}）"
-        )
+        raise ValueError(f"缺必填字段 name/command（name={name!r} command={command!r}）")
     credential_env = tuple(
         str(v).strip() for v in (d.get("credential_env") or []) if str(v).strip()
     )
     optional_credential_env = tuple(
-        str(v).strip()
-        for v in (d.get("optional_credential_env") or [])
-        if str(v).strip()
+        str(v).strip() for v in (d.get("optional_credential_env") or []) if str(v).strip()
     )
     env_template = {str(k): "" for k in (d.get("env_template") or {})}
     for v in list(credential_env) + list(optional_credential_env):
@@ -729,9 +728,7 @@ def _spec_from_ai_dict(
     )
 
 
-def infer_install_spec(
-    repo: str, chat_fn, *, url: str | None = None
-) -> ResolveResult:
+def infer_install_spec(repo: str, chat_fn, *, url: str | None = None) -> ResolveResult:
     """AI 读源头仓库推断装法（第 3 步实现）。
 
     复用 ``verify._raw_text`` / ``raw_url`` / ``probe_repo`` / ``list_tree`` 拉仓库的
@@ -772,9 +769,7 @@ def infer_install_spec(
             snippets = {"仓库描述": desc}
             trace.append("无可读安装文件，退回仓库描述")
     if not snippets:
-        return ResolveResult(
-            ok=False, reason="仓库无可读的安装说明文件", trace=trace
-        )
+        return ResolveResult(ok=False, reason="仓库无可读的安装说明文件", trace=trace)
 
     prompt = _build_infer_prompt(owner, repo_name, html_url, snippets)
     try:
@@ -795,9 +790,7 @@ def infer_install_spec(
             trace=trace + [_snippet(text)],
         )
     try:
-        spec = _spec_from_ai_dict(
-            d, repo=f"{owner}/{repo_name}", url=html_url, trace=list(trace)
-        )
+        spec = _spec_from_ai_dict(d, repo=f"{owner}/{repo_name}", url=html_url, trace=list(trace))
     except (ValueError, KeyError, TypeError) as e:
         return ResolveResult(
             ok=False,
@@ -805,9 +798,7 @@ def infer_install_spec(
             trace=trace + [_snippet(text)],
         )
 
-    trace.append(
-        f"推断装法：{spec.command} {' '.join(spec.args)}（缺项={spec.missing}）"
-    )
+    trace.append(f"推断装法：{spec.command} {' '.join(spec.args)}（缺项={spec.missing}）")
     return ResolveResult(
         ok=True,
         spec=spec,
@@ -878,8 +869,7 @@ def verify_install_spec(spec: InstallSpec, *, skip: bool = False) -> VerifyResul
             cp = subprocess.run(
                 cmd,
                 stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 timeout=_TRIAL_TIMEOUT,
             )
         except FileNotFoundError:
@@ -900,9 +890,7 @@ def verify_install_spec(spec: InstallSpec, *, skip: bool = False) -> VerifyResul
         except Exception as e:
             notes.append(f"试跑 {label} → 异常 {e}（换装法重试）")
             continue
-        out_text = (
-            ((cp.stdout or b"") + (cp.stderr or b"")).decode("utf-8", "ignore").lower()
-        )
+        out_text = ((cp.stdout or b"") + (cp.stderr or b"")).decode("utf-8", "ignore").lower()
         if cp.returncode == 0:
             return VerifyResult(
                 ok=True,
@@ -911,9 +899,7 @@ def verify_install_spec(spec: InstallSpec, *, skip: bool = False) -> VerifyResul
                 trace=notes + [f"试跑 {label} → 退出码 0"],
             )
         if any(sig in out_text for sig in _NOT_FOUND_SIGNALS):
-            notes.append(
-                f"试跑 {label} → 退出码 {cp.returncode}，命中「不可用」信号（换装法重试）"
-            )
+            notes.append(f"试跑 {label} → 退出码 {cp.returncode}，命中「不可用」信号（换装法重试）")
             continue
         # 非零但无「找不到」信号 → 包已解析、只是不认这个旗标 → 视为可装
         return VerifyResult(
@@ -934,9 +920,8 @@ def verify_install_spec(spec: InstallSpec, *, skip: bool = False) -> VerifyResul
 # L5 · 缺项补全两态弹窗
 # ---------------------------------------------------------------------------
 
-def prompt_missing(
-    spec: InstallSpec, has_tty: bool, prompt_fn=None
-) -> PromptResult:
+
+def prompt_missing(spec: InstallSpec, has_tty: bool, prompt_fn=None) -> PromptResult:
     """缺项补全两态弹窗（第 3 步实现）。
 
     有终端走交互 ``input()``；无终端把缺项清单写进报告、由 agent 在对话里转达。

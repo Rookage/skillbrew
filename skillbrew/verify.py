@@ -24,6 +24,7 @@ verify 不靠猜：直接 curl 到 GitHub，拿一手事实，回填纠正 plan.
 一个 skill = 它的整个目录（tdd 是多文件：SKILL.md + mocking.md + ...），install_list
 每项记目录树路径 + 目录下全部文件，install 时整目录拷。
 """
+
 from __future__ import annotations
 
 import json
@@ -31,9 +32,9 @@ import re
 import subprocess
 import time
 import urllib.error
-import warnings
 import urllib.parse
 import urllib.request
+import warnings
 from datetime import datetime
 from pathlib import Path
 
@@ -53,7 +54,9 @@ def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
-def _get(url: str, *, accept: str = "application/vnd.github+json", timeout: float = _TIMEOUT) -> tuple[int, bytes]:
+def _get(
+    url: str, *, accept: str = "application/vnd.github+json", timeout: float = _TIMEOUT
+) -> tuple[int, bytes]:
     """发请求；5xx 与网络瞬时错误自动退避重试（git/trees 端点偶发 504，重试通常即通）。
 
     4xx（404/403 限速等）不重试，原样返回 (code, body) 交调用方判断。
@@ -111,19 +114,22 @@ def _gh_cli_fallback(url: str) -> dict:
             # /repos/{owner}/{repo}/git/trees/{branch}?recursive=1
             endpoint = f"/repos/{owner}/{repo}/git/trees/{branch}?recursive=1"
             result = subprocess.run(
-                ["gh", "api", endpoint],
-                capture_output=True,
-                text=True,
-                timeout=_TIMEOUT
+                ["gh", "api", endpoint], capture_output=True, text=True, timeout=_TIMEOUT
             )
         else:
             # /repos/{owner}/{repo}
             result = subprocess.run(
-                ["gh", "repo", "view", f"{owner}/{repo}", "--json",
-                 "nameWithOwner,url,stargazerCount,defaultBranchRef,description,pushedAt"],
+                [
+                    "gh",
+                    "repo",
+                    "view",
+                    f"{owner}/{repo}",
+                    "--json",
+                    "nameWithOwner,url,stargazerCount,defaultBranchRef,description,pushedAt",
+                ],
                 capture_output=True,
                 text=True,
-                timeout=_TIMEOUT
+                timeout=_TIMEOUT,
             )
 
         if result.returncode != 0:
@@ -165,7 +171,9 @@ def _raw_text(url: str) -> str:
 # 否则 URL 后紧跟中文 prose（如「…/claude-code-templates或其…」）会被原非贪婪组吃进 repo 名，
 # 导致 probe_repo 拼出含中文的 URL、urlopen 内部 ascii 编码炸（UnicodeEncodeError，非 RuntimeError，
 # 穿透 except RuntimeError）。lookahead 在首个非仓库名字符（含中文）处收口，repo 即停在「或」前。
-_GH_URL_RE = re.compile(r"github\.com/([A-Za-z0-9](?:[A-Za-z0-9-]*))/([A-Za-z0-9._-]+)(?=[^A-Za-z0-9._-]|$)")
+_GH_URL_RE = re.compile(
+    r"github\.com/([A-Za-z0-9](?:[A-Za-z0-9-]*))/([A-Za-z0-9._-]+)(?=[^A-Za-z0-9._-]|$)"
+)
 
 
 def parse_github_urls(text: str) -> list[tuple[str, str]]:
@@ -193,7 +201,8 @@ def probe_repo(owner: str, repo: str) -> dict | None:
             return None
         raise
     return {
-        "owner": owner, "repo": repo,
+        "owner": owner,
+        "repo": repo,
         "full_name": d.get("full_name"),
         "html_url": d.get("html_url"),
         "stars": d.get("stargazers_count"),
@@ -209,7 +218,9 @@ def list_tree(owner: str, repo: str, branch: str) -> list[dict]:
     d = _api_json(url)
     if d.get("truncated"):
         raise RuntimeError(f"文件树被截断（仓库过大），无法可靠校验：{owner}/{repo}")
-    return [{"path": t["path"], "type": t["type"], "size": t.get("size", 0)} for t in d.get("tree", [])]
+    return [
+        {"path": t["path"], "type": t["type"], "size": t.get("size", 0)} for t in d.get("tree", [])
+    ]
 
 
 def group_skill_dirs(tree: list[dict]) -> list[dict]:
@@ -234,12 +245,17 @@ def group_skill_dirs(tree: list[dict]) -> list[dict]:
             continue
         dir_path = "/".join(parts[:-1])
         by_dir[dir_path] = {
-            "category": category, "name": name, "dir_path": dir_path,
-            "sk_md_path": p, "files": {},
+            "category": category,
+            "name": name,
+            "dir_path": dir_path,
+            "sk_md_path": p,
+            "files": {},
         }
     # 第二遍：把每个 skill 目录下的全部文件归入（整目录，只收 blob 文件，跳过子目录树节点）
     for t in tree:
-        if t.get("type") != "blob":  # 跳过 tree（子目录）/commit 节点，只收文件，否则 raw_url 会 404
+        if (
+            t.get("type") != "blob"
+        ):  # 跳过 tree（子目录）/commit 节点，只收文件，否则 raw_url 会 404
             continue
         p = t["path"]
         for dir_path, d in by_dir.items():
@@ -249,11 +265,17 @@ def group_skill_dirs(tree: list[dict]) -> list[dict]:
     out = []
     for d in by_dir.values():
         files = sorted(d["files"].values(), key=lambda f: f["path"])
-        out.append({
-            "category": d["category"], "name": d["name"], "dir_path": d["dir_path"],
-            "sk_md_path": d["sk_md_path"], "files": files,
-            "file_count": len(files), "multi_file": len(files) > 1,
-        })
+        out.append(
+            {
+                "category": d["category"],
+                "name": d["name"],
+                "dir_path": d["dir_path"],
+                "sk_md_path": d["sk_md_path"],
+                "files": files,
+                "file_count": len(files),
+                "multi_file": len(files) > 1,
+            }
+        )
     out.sort(key=lambda x: (x["category"], x["name"]))
     return out
 
@@ -266,9 +288,7 @@ def group_skill_dirs(tree: list[dict]) -> list[dict]:
 # 不走 resolve_repo（那是单仓 Skill 架构，MCP 视频常有多个不同仓，会错配）。
 
 
-def group_mcp_items(
-    plan: dict, catalog=mcp_catalog
-) -> tuple[list[dict], list[dict]]:
+def group_mcp_items(plan: dict, catalog=mcp_catalog) -> tuple[list[dict], list[dict]]:
     """MCP 形态：遍历 plan.capabilities，按 source_ref 取 traced_sources 里的 MCP 名，
     查 catalog（brew-formula 表）建 install item；未命中进 unresolved。
 
@@ -301,8 +321,9 @@ def group_mcp_items(
             hint = catalog.suggest_candidate(raw_name) if raw_name else None
             unresolved_entry: dict = {
                 "name": raw_name or cap.get("name", ""),
-                "reason": hint["reason"] if hint else
-                    "mcp_catalog 未收录：无官方标准 MCP 包，或名称需人工核实（不臆造包装）",
+                "reason": hint["reason"]
+                if hint
+                else "mcp_catalog 未收录：无官方标准 MCP 包，或名称需人工核实（不臆造包装）",
                 "candidate": hint["candidate"] if hint else None,
                 "source_ref": source_ref,
             }
@@ -316,37 +337,43 @@ def group_mcp_items(
             continue
         # 防御：catalog 条目 command 为空时当 unresolved 处理（不产出无效 item）
         if not entry.command:
-            unresolved.append({
+            unresolved.append(
+                {
+                    "name": entry.name,
+                    "reason": "catalog 条目 command 为空，无法安装",
+                    "candidate": None,
+                    "source_ref": source_ref,
+                    "repo": entry.repo,
+                    "url": entry.url,
+                }
+            )
+            continue
+        items.append(
+            {
                 "name": entry.name,
-                "reason": "catalog 条目 command 为空，无法安装",
-                "candidate": None,
-                "source_ref": source_ref,
+                "form": "MCP",
+                "install_method": "mcp_register",
+                "mcp": {
+                    "transport": entry.transport,
+                    "command": entry.command,
+                    "args": list(entry.args),
+                    "scope": entry.scope_hint,
+                },
                 "repo": entry.repo,
                 "url": entry.url,
-            })
-            continue
-        items.append({
-            "name": entry.name,
-            "form": "MCP",
-            "install_method": "mcp_register",
-            "mcp": {
-                "transport": entry.transport,
-                "command": entry.command,
-                "args": list(entry.args),
-                "scope": entry.scope_hint,
-            },
-            "repo": entry.repo,
-            "url": entry.url,
-            "stars": None,            # 由 _probe_stars_for_items 探一手星数后回填（刻舟求剑）
-            "stars_observed_at": None,
-            "usability": catalog.usability_of(entry),
-            "credential_env": list(entry.credential_env) if entry.credential_env else None,
-            "env_template": dict(entry.env_template) if entry.env_template else {},
-            "post_install_steps": list(entry.post_install_steps) if entry.post_install_steps else [],
-            "invoke_hint": entry.invoke_hint,
-            "source_ref": source_ref,
-            "capability_name": cap.get("name", ""),  # 中文能力描述，台账/报告展示用
-        })
+                "stars": None,  # 由 _probe_stars_for_items 探一手星数后回填（刻舟求剑）
+                "stars_observed_at": None,
+                "usability": catalog.usability_of(entry),
+                "credential_env": list(entry.credential_env) if entry.credential_env else None,
+                "env_template": dict(entry.env_template) if entry.env_template else {},
+                "post_install_steps": list(entry.post_install_steps)
+                if entry.post_install_steps
+                else [],
+                "invoke_hint": entry.invoke_hint,
+                "source_ref": source_ref,
+                "capability_name": cap.get("name", ""),  # 中文能力描述，台账/报告展示用
+            }
+        )
     return items, unresolved
 
 
@@ -372,7 +399,10 @@ def _probe_stars_for_items(items: list[dict]) -> None:
 
 
 def backfill_plan_mcp(
-    plan_path: Path, plan: dict, items: list[dict], unresolved: list[dict],
+    plan_path: Path,
+    plan: dict,
+    items: list[dict],
+    unresolved: list[dict],
     install_list_path: Path,
 ) -> list[str]:
     """MCP 形态回填 plan.json 的 _verify 块：记录解析命中的 MCP、unresolved、install_list 路径。
@@ -394,9 +424,7 @@ def backfill_plan_mcp(
         "corrections": [],  # 见下；先占位再回填，保证 corrections 字段存在
         "note": "MCP 形态：由 mcp_catalog（brew-formula 表）解析，未命中者进 unresolved 交用户定夺（D19/D22）。",
     }
-    corrections.append(
-        f"_verify: MCP 形态回填（{len(items)} 命中 / {len(unresolved)} unresolved）"
-    )
+    corrections.append(f"_verify: MCP 形态回填（{len(items)} 命中 / {len(unresolved)} unresolved）")
     plan["_verify"]["corrections"] = corrections
     plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
     return corrections
@@ -439,6 +467,7 @@ def enrich_with_frontmatter(
         # （实测：35 个 skill 逐个拉不间隔时，远端频繁关闭连接）
         if i > 0:
             import time as _time
+
             _time.sleep(0.5)
         try:
             body = _raw_text(url)
@@ -454,6 +483,7 @@ def enrich_with_frontmatter(
 
 
 # ---- 仓库名从"错的草稿"找回"对的真身" ----
+
 
 def _norm(s: str) -> str:
     """归一化 skill 名用于比对：小写 + 去非字母数字。GrillMe→grillme, grill-me→grillme。"""
@@ -478,10 +508,11 @@ def _extract_search_keywords(plan: dict) -> list[tuple[str, dict]]:
         note = ts.get("note", "").lower()
         # 匹配 "25k 星标" / "28.7k 星" / "25000 stars" 等
         import re
+
         m = re.search(r"(\d+(?:\.\d+)?)\s*k?\s*(?:星|stars?)", note)
         if m:
             val = float(m.group(1))
-            if "k" in note[m.start():m.end()]:
+            if "k" in note[m.start() : m.end()]:
                 val *= 1000
             # 给一个范围：±30%
             stars_min = int(val * 0.7)
@@ -552,7 +583,9 @@ def resolve_repo(
     # 处理普通 seeds（来自 draft_repos）
     for seed in seeds:
         q = urllib.parse.quote(seed)
-        d = _api_json(f"{API_BASE}/search/repositories?q={q}&sort=stars&per_page={_SEARCH_CANDIDATES}")
+        d = _api_json(
+            f"{API_BASE}/search/repositories?q={q}&sort=stars&per_page={_SEARCH_CANDIDATES}"
+        )
         items = d.get("items", [])
         if not targets:
             cands = sorted(items, key=lambda c: c.get("stargazers_count", 0), reverse=True)
@@ -565,9 +598,13 @@ def resolve_repo(
 
             if not targets:
                 info = {
-                    "owner": co, "repo": cr, "full_name": cand["full_name"],
-                    "html_url": cand["html_url"], "stars": cand["stargazers_count"],
-                    "default_branch": branch, "description": cand.get("description"),
+                    "owner": co,
+                    "repo": cr,
+                    "full_name": cand["full_name"],
+                    "html_url": cand["html_url"],
+                    "stars": cand["stargazers_count"],
+                    "default_branch": branch,
+                    "description": cand.get("description"),
                     "pushed_at": cand.get("pushed_at"),
                 }
                 how = f"无点名 skill 可校验；搜 '{seed}' 按星数降序；取星数最高候选 {co}/{cr}（⭐{cand['stargazers_count']}）"
@@ -584,9 +621,13 @@ def resolve_repo(
             hits = targets & skill_names
             if hits:
                 info = {
-                    "owner": co, "repo": cr, "full_name": cand["full_name"],
-                    "html_url": cand["html_url"], "stars": cand["stargazers_count"],
-                    "default_branch": branch, "description": cand.get("description"),
+                    "owner": co,
+                    "repo": cr,
+                    "full_name": cand["full_name"],
+                    "html_url": cand["html_url"],
+                    "stars": cand["stargazers_count"],
+                    "default_branch": branch,
+                    "description": cand.get("description"),
                     "pushed_at": cand.get("pushed_at"),
                 }
                 how = (
@@ -604,7 +645,9 @@ def resolve_repo(
         if "stars_max" in filters:
             q_parts.append(f"stars:<={filters['stars_max']}")
         q = urllib.parse.quote(" ".join(q_parts))
-        d = _api_json(f"{API_BASE}/search/repositories?q={q}&sort=stars&per_page={_SEARCH_CANDIDATES}")
+        d = _api_json(
+            f"{API_BASE}/search/repositories?q={q}&sort=stars&per_page={_SEARCH_CANDIDATES}"
+        )
         items = d.get("items", [])
 
         # 按星数降序（在星数范围内取最高的）
@@ -616,9 +659,13 @@ def resolve_repo(
 
             if not targets:
                 info = {
-                    "owner": co, "repo": cr, "full_name": cand["full_name"],
-                    "html_url": cand["html_url"], "stars": cand["stargazers_count"],
-                    "default_branch": branch, "description": cand.get("description"),
+                    "owner": co,
+                    "repo": cr,
+                    "full_name": cand["full_name"],
+                    "html_url": cand["html_url"],
+                    "stars": cand["stargazers_count"],
+                    "default_branch": branch,
+                    "description": cand.get("description"),
                     "pushed_at": cand.get("pushed_at"),
                 }
                 stars_range = ""
@@ -639,9 +686,13 @@ def resolve_repo(
             hits = targets & skill_names
             if hits:
                 info = {
-                    "owner": co, "repo": cr, "full_name": cand["full_name"],
-                    "html_url": cand["html_url"], "stars": cand["stargazers_count"],
-                    "default_branch": branch, "description": cand.get("description"),
+                    "owner": co,
+                    "repo": cr,
+                    "full_name": cand["full_name"],
+                    "html_url": cand["html_url"],
+                    "stars": cand["stargazers_count"],
+                    "default_branch": branch,
+                    "description": cand.get("description"),
                     "pushed_at": cand.get("pushed_at"),
                 }
                 how = (
@@ -749,18 +800,21 @@ def backfill_plan(
         if match:
             steps_new = [
                 f"整目录拷贝：{match['dir_path']}/（{match['file_count']} 个文件"
-                + ("，多文件 skill" if match["multi_file"] else "") + "）",
+                + ("，多文件 skill" if match["multi_file"] else "")
+                + "）",
                 f"目标路径：.claude/skills/{match['name']}/",
                 f"SKILL.md 正文：{match.get('raw_url', '')}",
             ]
             corrections.append(
-                f"capability {c.get('name','')!r}: install_steps 人话→机器"
+                f"capability {c.get('name', '')!r}: install_steps 人话→机器"
                 f"（{match['dir_path']}, {match['file_count']} 文件）"
             )
             c["install_steps"] = steps_new
             c["verified_skill"] = {
-                "name": match["name"], "dir_path": match["dir_path"],
-                "multi_file": match["multi_file"], "file_count": match["file_count"],
+                "name": match["name"],
+                "dir_path": match["dir_path"],
+                "multi_file": match["multi_file"],
+                "file_count": match["file_count"],
             }
 
     # 用一手数据回填草稿的"待核实"问题。规则按关键词命中（容错问法差异，比单子串稳）；
@@ -768,25 +822,41 @@ def backfill_plan(
     # 答案全部从一手数据现取（星数/总数/文件数/目录），不写死本源 specifics（刻舟求剑 §5.3）。
     skill_by_norm = {_norm(s["name"]): s for s in skills}
     rules: list[tuple[list[str], str]] = [
-        (["颗星", "星数", "stars", "多少星", "stars为"],
-         f"✅已核实：⭐{stars}（{ts} 取数，星数动态非定值）；画面/字幕所示星数为草稿 OCR，以一手为准"),
-        (["个skill", "几个skill", "多少个", "skill总数", "个能力"],
-         f"✅已核实：全仓 {len(skills)} 个 SKILL.md（见 install_list.json）；视频口述数字若与一手不符，以一手树为准"),
+        (
+            ["颗星", "星数", "stars", "多少星", "stars为"],
+            f"✅已核实：⭐{stars}（{ts} 取数，星数动态非定值）；画面/字幕所示星数为草稿 OCR，以一手为准",
+        ),
+        (
+            ["个skill", "几个skill", "多少个", "skill总数", "个能力"],
+            f"✅已核实：全仓 {len(skills)} 个 SKILL.md（见 install_list.json）；视频口述数字若与一手不符，以一手树为准",
+        ),
     ]
     gm = skill_by_norm.get("grillme")
     if gm:
-        rules.append((["完整提示词", "三句话", "四十二个词"],
-                      f"✅已核实：grill-me 在一手树中（{gm['file_count']} 文件"
-                      + ("，多文件 skill" if gm["multi_file"] else "")
-                      + f"，{gm['dir_path']}），整目录拷，详见 install_list.json"))
+        rules.append(
+            (
+                ["完整提示词", "三句话", "四十二个词"],
+                f"✅已核实：grill-me 在一手树中（{gm['file_count']} 文件"
+                + ("，多文件 skill" if gm["multi_file"] else "")
+                + f"，{gm['dir_path']}），整目录拷，详见 install_list.json",
+            )
+        )
     tdd = skill_by_norm.get("tdd")
     if tdd:
-        rules.append((["具体文件名", "安装方式", "目录结构"],
-                      f"✅已核实：{tdd['dir_path']}，{tdd['file_count']} 文件"
-                      + ("，多文件 skill" if tdd["multi_file"] else "")
-                      + "，整目录拷"))
-    rules.append((["Claude Code", "特定工具", "仅适用"],
-                  "✅已核实：Claude Code 是 Anthropic 的 CLI（命令行工具）；SKILL.md+YAML frontmatter 即其 skill 格式"))
+        rules.append(
+            (
+                ["具体文件名", "安装方式", "目录结构"],
+                f"✅已核实：{tdd['dir_path']}，{tdd['file_count']} 文件"
+                + ("，多文件 skill" if tdd["multi_file"] else "")
+                + "，整目录拷",
+            )
+        )
+    rules.append(
+        (
+            ["Claude Code", "特定工具", "仅适用"],
+            "✅已核实：Claude Code 是 Anthropic 的 CLI（命令行工具）；SKILL.md+YAML frontmatter 即其 skill 格式",
+        )
+    )
     new_oq: list[str] = []
     resolved_n = 0
     for q in plan.get("open_questions", []):
@@ -840,12 +910,18 @@ def verify(source_dir: Path, *, repo_override: str | None = None, on_progress=No
         return _verify_mcp(source_dir, plan_path, plan)
     if has_repo:
         return _verify_repo(source_dir, plan_path, plan)
-    return _verify_skill(source_dir, plan_path, plan, repo_override=repo_override, on_progress=on_progress)
+    return _verify_skill(
+        source_dir, plan_path, plan, repo_override=repo_override, on_progress=on_progress
+    )
 
 
 def _verify_skill(
-    source_dir: Path, plan_path: Path, plan: dict,
-    *, repo_override: str | None = None, on_progress=None,
+    source_dir: Path,
+    plan_path: Path,
+    plan: dict,
+    *,
+    repo_override: str | None = None,
+    on_progress=None,
 ) -> dict:
     """Skill 形态溯源：找真身 repo → 列 skill → 取 frontmatter → 产 install_list.json + 回填 plan。
 
@@ -874,10 +950,15 @@ def _verify_skill(
     install_list = {
         "source_video": source_dir.name,
         "verified_repo": {
-            "owner": owner, "repo": repo, "full_name": info["full_name"],
-            "html_url": info["html_url"], "default_branch": branch,
-            "stars": info["stars"], "stars_observed_at": info["stars_observed_at"],
-            "description": info["description"], "how_resolved": how,
+            "owner": owner,
+            "repo": repo,
+            "full_name": info["full_name"],
+            "html_url": info["html_url"],
+            "default_branch": branch,
+            "stars": info["stars"],
+            "stars_observed_at": info["stars_observed_at"],
+            "description": info["description"],
+            "how_resolved": how,
         },
         "branch": branch,
         "raw_base": f"{RAW_BASE}/{owner}/{repo}/{branch}",
@@ -885,7 +966,7 @@ def _verify_skill(
         "form": "Skill",
         "note": "每个 skill = files[] 列出的文件；install 时从 raw_url 逐文件下载到 .claude/skills/<name>/（不整目录拷）",
         "total": len(skills),
-        "items": skills,   # 规范键（章程 D2，下游统一读 items[]）
+        "items": skills,  # 规范键（章程 D2，下游统一读 items[]）
         "skills": skills,  # 兼容别名，与 items 同数组引用
         "generated_at": _now_iso(),
     }
@@ -925,7 +1006,7 @@ def _verify_mcp(source_dir: Path, plan_path: Path, plan: dict) -> dict:
         "install_method": "mcp_register",
         "form": "MCP",
         "note": "MCP 形态：每个 item = 一个 MCP 服务器；install 时按 mcp 注册到 ~/.claude.json"
-                "（claude mcp add -s user [-- <command> <args...>]），不改 ~/.claude/skills/",
+        "（claude mcp add -s user [-- <command> <args...>]），不改 ~/.claude/skills/",
         "items": items,
         "skills": items,  # 兼容别名，与 items 同数组引用（旧下游读 skills[] 仍可用）
         "unresolved": unresolved,
@@ -982,16 +1063,31 @@ def _repo_usability(steps: list[str]) -> tuple[str, list[str]]:
     """
     blob = " ".join(steps).lower()
     post: list[str] = []
-    if any(k in blob for k in (
-        "api key", "api_key", "api-key", "密钥", "token", "openai", "deepseek",
-        "llm api", "大模型api", "大模型 api", "api 密钥",
-    )):
+    if any(
+        k in blob
+        for k in (
+            "api key",
+            "api_key",
+            "api-key",
+            "密钥",
+            "token",
+            "openai",
+            "deepseek",
+            "llm api",
+            "大模型api",
+            "大模型 api",
+            "api 密钥",
+        )
+    ):
         post.append("需配置大模型 API key（如 OPENAI_API_KEY / DEEPSEEK_API_KEY），缺则装了不能跑")
         return "needs_credentials", post
     if any(k in blob for k in ("ffmpeg", "imagemagick", "cuda", "gpu", "torch")):
         post.append("需装系统运行时（如 ffmpeg / GPU 驱动）才能跑")
         return "needs_runtime", post
-    if any(k in blob for k in (".env", "config.toml", "config.yaml", "config.json", "配置文件", "修改配置")):
+    if any(
+        k in blob
+        for k in (".env", "config.toml", "config.yaml", "config.json", "配置文件", "修改配置")
+    ):
         post.append("需按其 README 改配置文件（如 .env / config.toml）后才能跑")
         return "needs_config", post
     post.append("按其 README 克隆 + 装依赖 + 运行")
@@ -1038,60 +1134,79 @@ def group_repo_items(plan: dict) -> tuple[list[dict], list[dict]]:
                 ts = traced[idx] or {}
         pair = _ts_repo(ts)
         if pair is None:
-            unresolved.append({
-                "name": cap.get("name", ""),
-                "reason": "repo 形态但 traced_sources 未含 github 仓库 URL，需人工核实",
-                "source_ref": source_ref,
-            })
+            unresolved.append(
+                {
+                    "name": cap.get("name", ""),
+                    "reason": "repo 形态但 traced_sources 未含 github 仓库 URL，需人工核实",
+                    "source_ref": source_ref,
+                }
+            )
             continue
         owner, repo = pair
         key = (owner.lower(), repo.lower())
-        e = by_repo.setdefault(key, {
-            "owner": owner, "repo": repo, "full_name": f"{owner}/{repo}",
-            "capabilities": [], "steps": [],
-        })
-        e["capabilities"].append({
-            "name": cap.get("name", ""), "form": f, "source_ref": source_ref,
-            "install_steps": cap.get("install_steps", []) or [],
-        })
+        e = by_repo.setdefault(
+            key,
+            {
+                "owner": owner,
+                "repo": repo,
+                "full_name": f"{owner}/{repo}",
+                "capabilities": [],
+                "steps": [],
+            },
+        )
+        e["capabilities"].append(
+            {
+                "name": cap.get("name", ""),
+                "form": f,
+                "source_ref": source_ref,
+                "install_steps": cap.get("install_steps", []) or [],
+            }
+        )
         e["steps"].extend(cap.get("install_steps", []) or [])
 
     items: list[dict] = []
     for e in by_repo.values():
         info = probe_repo(e["owner"], e["repo"])  # 一手核实存在 + 星数 + 默认分支
         if info is None:
-            unresolved.append({
-                "name": e["full_name"],
-                "reason": f"github 仓库 {e['full_name']} 404（不存在或私有），无法 clone",
-                "source_ref": None,
-            })
+            unresolved.append(
+                {
+                    "name": e["full_name"],
+                    "reason": f"github 仓库 {e['full_name']} 404（不存在或私有），无法 clone",
+                    "source_ref": None,
+                }
+            )
             continue
         usability, post = _repo_usability(e["steps"])
-        items.append({
-            "name": info["repo"],
-            "form": "repo",
-            "install_method": "clone",
-            "repo": info["full_name"],
-            "owner": info["owner"],
-            "url": info["html_url"],
-            "default_branch": info["default_branch"],
-            "stars": info["stars"],
-            "stars_observed_at": _now_iso(),
-            "description": info.get("description"),
-            "usability": usability,
-            "credential_env": _repo_credential_env(e["steps"]),
-            "post_install_steps": post,
-            "capabilities": e["capabilities"],
-            "invoke_hint": (
-                f"git clone {info['html_url']} 后按 README 装依赖+配置+运行；"
-                f"提供 {len(e['capabilities'])} 项能力"
-            ),
-        })
+        items.append(
+            {
+                "name": info["repo"],
+                "form": "repo",
+                "install_method": "clone",
+                "repo": info["full_name"],
+                "owner": info["owner"],
+                "url": info["html_url"],
+                "default_branch": info["default_branch"],
+                "stars": info["stars"],
+                "stars_observed_at": _now_iso(),
+                "description": info.get("description"),
+                "usability": usability,
+                "credential_env": _repo_credential_env(e["steps"]),
+                "post_install_steps": post,
+                "capabilities": e["capabilities"],
+                "invoke_hint": (
+                    f"git clone {info['html_url']} 后按 README 装依赖+配置+运行；"
+                    f"提供 {len(e['capabilities'])} 项能力"
+                ),
+            }
+        )
     return items, unresolved
 
 
 def backfill_plan_repo(
-    plan_path: Path, plan: dict, items: list[dict], unresolved: list[dict],
+    plan_path: Path,
+    plan: dict,
+    items: list[dict],
+    unresolved: list[dict],
     install_list_path: Path,
 ) -> list[str]:
     """repo 形态回填 plan.json 的 _verify 块：记录待 clone 仓库、unresolved、install_list 路径。
@@ -1101,8 +1216,7 @@ def backfill_plan_repo(
         "verified_at": _now_iso(),
         "form": "repo",
         "verified_repos": [
-            {"name": it["name"], "repo": it["repo"], "stars": it["stars"]}
-            for it in items
+            {"name": it["name"], "repo": it["repo"], "stars": it["stars"]} for it in items
         ],
         "unresolved": [
             {"name": u["name"], "reason": u["reason"], "source_ref": u.get("source_ref")}
@@ -1135,7 +1249,7 @@ def _verify_repo(source_dir: Path, plan_path: Path, plan: dict) -> dict:
         "install_method": "clone",
         "form": "repo",
         "note": "repo 形态：每个 item = 一个要 git clone 下来本地跑的开源项目；"
-                "install 时 clone 到本地 + 装依赖 + 配置 + 运行（不改 ~/.claude/skills/）",
+        "install 时 clone 到本地 + 装依赖 + 配置 + 运行（不改 ~/.claude/skills/）",
         "items": items,
         "skills": items,  # 兼容别名，与 items 同数组引用
         "unresolved": unresolved,
@@ -1160,6 +1274,7 @@ def _verify_repo(source_dir: Path, plan_path: Path, plan: dict) -> dict:
 # ---- 直接运行：python -m skillbrew.verify <源目录> ----
 def _main() -> int:
     import sys
+
     if len(sys.argv) < 2:
         print("用法: python -m skillbrew.verify <源目录> [--repo owner/repo]")
         print("     源目录需含 plan.json（先跑 plan）")
@@ -1172,11 +1287,15 @@ def _main() -> int:
     s = verify(src, repo_override=repo_override)
     form = s.get("form", "Skill")
     if form == "MCP":
-        print(f"[OK] MCP 形态核实：解析命中 {s['item_total']} 个 / unresolved {s['unresolved_count']} 个")
+        print(
+            f"[OK] MCP 形态核实：解析命中 {s['item_total']} 个 / unresolved {s['unresolved_count']} 个"
+        )
         print(f"     install_list → {s['install_list']}")
         print(f"     plan.json 纠正 {len(s['corrections'])} 处")
     elif form == "repo":
-        print(f"[OK] repo 形态核实：待 clone 仓库 {s['item_total']} 个 / unresolved {s['unresolved_count']} 个")
+        print(
+            f"[OK] repo 形态核实：待 clone 仓库 {s['item_total']} 个 / unresolved {s['unresolved_count']} 个"
+        )
         print(f"     install_list → {s['install_list']}")
         print(f"     plan.json 纠正 {len(s['corrections'])} 处")
     else:

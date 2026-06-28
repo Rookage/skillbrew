@@ -17,6 +17,7 @@
 
 换源(YouTube/其他)只需新增 adapter，主流程不变。
 """
+
 from __future__ import annotations
 
 import json
@@ -37,6 +38,7 @@ UA = (
 @dataclass
 class BiliFetchResult:
     """B站获取结果。"""
+
     bvid: str
     aid: int
     cid: int
@@ -51,6 +53,7 @@ class BiliFetchResult:
 @dataclass
 class DouyinFetchResult:
     """抖音获取结果。"""
+
     video_id: str
     title: str
     duration: int
@@ -154,15 +157,48 @@ def fetch_bilibili(source: str, out_dir: Path, *, qn: int = 32) -> BiliFetchResu
 
     # 重封装
     video_path, audio_path = out_dir / "video.mp4", out_dir / "audio.mp3"
-    _run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-          "-i", str(v_m4s), "-c", "copy", str(video_path)])
-    _run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-          "-i", str(a_m4s), "-vn", "-c:a", "libmp3lame", "-q:a", "4", str(audio_path)])
+    _run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(v_m4s),
+            "-c",
+            "copy",
+            str(video_path),
+        ]
+    )
+    _run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(a_m4s),
+            "-vn",
+            "-c:a",
+            "libmp3lame",
+            "-q:a",
+            "4",
+            str(audio_path),
+        ]
+    )
 
     return BiliFetchResult(
-        bvid=bvid, aid=aid, cid=cid, title=info["title"],
-        duration=info.get("duration", 0), pic=info.get("pic", ""),
-        video_path=video_path, audio_path=audio_path, meta_path=out_dir / "meta.json",
+        bvid=bvid,
+        aid=aid,
+        cid=cid,
+        title=info["title"],
+        duration=info.get("duration", 0),
+        pic=info.get("pic", ""),
+        video_path=video_path,
+        audio_path=audio_path,
+        meta_path=out_dir / "meta.json",
     )
 
 
@@ -211,13 +247,18 @@ def fetch_douyin(source: str, out_dir: Path) -> DouyinFetchResult:
     video_tmp = out_dir / "video_tmp.mp4"
 
     # 下载视频（含音频，抖音格式是合一的）+ 写 info.json
-    _run([
-        "yt-dlp", "-f", "best[ext=mp4]/best",
-        "-o", str(video_tmp),
-        "--write-info-json",
-        "--no-playlist",
-        source,
-    ])
+    _run(
+        [
+            "yt-dlp",
+            "-f",
+            "best[ext=mp4]/best",
+            "-o",
+            str(video_tmp),
+            "--write-info-json",
+            "--no-playlist",
+            source,
+        ]
+    )
 
     # 重命名视频
     video_path = out_dir / "video.mp4"
@@ -225,12 +266,23 @@ def fetch_douyin(source: str, out_dir: Path) -> DouyinFetchResult:
 
     # 用 ffmpeg 从视频提取音频
     audio_path = out_dir / "audio.mp3"
-    _run([
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-        "-i", str(video_path),
-        "-vn", "-c:a", "libmp3lame", "-q:a", "4",
-        str(audio_path),
-    ])
+    _run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(video_path),
+            "-vn",
+            "-c:a",
+            "libmp3lame",
+            "-q:a",
+            "4",
+            str(audio_path),
+        ]
+    )
 
     # 读取 yt-dlp 的 info.json（文件名跟输出模板：video_tmp.info.json）
     info_json = out_dir / "video_tmp.info.json"
@@ -261,6 +313,7 @@ def fetch_douyin(source: str, out_dir: Path) -> DouyinFetchResult:
 # ---- 直接运行：python -m skillbrew.ingest <url> [out_dir] ----
 def _main() -> int:
     import sys
+
     if len(sys.argv) < 2:
         print("用法: python -m skillbrew.ingest <B站URL/BV号|抖音URL/ID> [输出目录]")
         return 1
@@ -273,17 +326,21 @@ def _main() -> int:
         r = fetch_bilibili(src, out)
         print(f"[OK] {r.title}")
         print(f"     bvid={r.bvid} aid={r.aid} cid={r.cid} 时长={r.duration}s")
-        print(f"     视频: {r.video_path} ({r.video_path.stat().st_size//1024}KB)")
-        print(f"     音频: {r.audio_path} ({r.audio_path.stat().st_size//1024}KB)")
+        print(f"     视频: {r.video_path} ({r.video_path.stat().st_size // 1024}KB)")
+        print(f"     音频: {r.audio_path} ({r.audio_path.stat().st_size // 1024}KB)")
     elif "douyin.com" in src or src.isdigit():
         # 抖音
         video_id = parse_douyin_id(src) if src.isdigit() else None
-        out = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(f"data/sources/douyin_{video_id or 'unknown'}")
-        r = fetch_douyin(src, out)
+        out = (
+            Path(sys.argv[2])
+            if len(sys.argv) > 2
+            else Path(f"data/sources/douyin_{video_id or 'unknown'}")
+        )
+        r = fetch_douyin(src, out)  # type: ignore[assignment]
         print(f"[OK] {r.title}")
-        print(f"     video_id={r.video_id} 时长={r.duration}s")
-        print(f"     视频: {r.video_path} ({r.video_path.stat().st_size//1024}KB)")
-        print(f"     音频: {r.audio_path} ({r.audio_path.stat().st_size//1024}KB)")
+        print(f"     video_id={r.video_id} 时长={r.duration}s")  # type: ignore[attr-defined]
+        print(f"     视频: {r.video_path} ({r.video_path.stat().st_size // 1024}KB)")
+        print(f"     音频: {r.audio_path} ({r.audio_path.stat().st_size // 1024}KB)")
     else:
         print(f"[ERR] 未识别的平台: {src}")
         return 1

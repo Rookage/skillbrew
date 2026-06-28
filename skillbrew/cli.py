@@ -8,10 +8,10 @@
 pip install -e . 后也可直接 `skillbrew ...`。
 CLI 用标准库 argparse（零新增依赖；后续可换 Typer，接口不变）。
 """
+
 from __future__ import annotations
 
 import argparse
-import base64
 import json
 import os
 import struct
@@ -19,14 +19,10 @@ import sys
 import tempfile
 import time
 import traceback
-import warnings
 import zlib
 from pathlib import Path
 
-from . import __version__
-from . import config
-from . import llm
-from . import notify
+from . import __version__, config, llm, notify
 from .config import Config, ensure_utf8_stdout, load_config
 from .errors import SkillbrewError
 
@@ -49,7 +45,9 @@ def _check_present(cfg: Config) -> bool:
         ok = False
         print(f"  [缺] TEXT 组缺少: {', '.join(cfg.text.missing)}（文本模型必备，D21）")
     if cfg.vision.missing:
-        print(f"  [WARN] VISION 组缺少: {', '.join(cfg.vision.missing)}（视觉可选，将降级「视频转语音→转文字」，D21）")
+        print(
+            f"  [WARN] VISION 组缺少: {', '.join(cfg.vision.missing)}（视觉可选，将降级「视频转语音→转文字」，D21）"
+        )
     return ok
 
 
@@ -88,12 +86,15 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     # ---- 判断步 recommend 可用性（D21：无 key 不走死路，keyword/manual 恒可用）----
     from . import recommend
+
     print("\n[判断步 recommend] 三模式可用性：")
     for line in recommend.recommend_health(cfg):
         print("   -", line)
 
     if not text_ok:
-        print("\n[FAIL] 文本模型必备（D21）。keyword/manual 判断步仍可用；请检查 .env（参考 .env.example）。")
+        print(
+            "\n[FAIL] 文本模型必备（D21）。keyword/manual 判断步仍可用；请检查 .env（参考 .env.example）。"
+        )
         return 1
 
     # ---- 文本组 ----
@@ -107,9 +108,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     print("[文本组] 实测对话：")
     t0 = time.time()
     try:
-        reply = llm.chat_text(
-            cfg, "用一句话介绍你自己，并说出你的模型名。", timeout=60
-        )
+        reply = llm.chat_text(cfg, "用一句话介绍你自己，并说出你的模型名。", timeout=60)
         print(f"   [OK] {time.time() - t0:.1f}s -> {reply}")
     except SkillbrewError as e:
         print(f"   [WARN] {e}")
@@ -159,9 +158,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 # ---- 主流程子命令：run / ingest / understand / plan ----
 
+
 def _resolve_source(cfg: Config, s: str) -> Path:
     """BV号/URL → data/sources/<bvid>；否则当成源目录路径。"""
     from . import ingest
+
     if ingest.BVID_RE.search(s):
         return cfg.data_dir / "sources" / ingest.parse_bvid(s)
     return Path(s)
@@ -169,7 +170,7 @@ def _resolve_source(cfg: Config, s: str) -> Path:
 
 def cmd_run(args: argparse.Namespace) -> int:
     """一键：采集 → 理解(字幕+关键帧+视觉) → 消化 → 草稿计划，到此为止不安装。"""
-    from . import ingest, understand, plan
+    from . import ingest, plan, understand
 
     cfg = load_config()
     bvid = ingest.parse_bvid(args.source)
@@ -187,17 +188,16 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"   -> {r.title}（时长 {r.duration}s）")
 
     # ② 字幕 ASR
-    _EMPTY_TRANSCRIPT = '{"segments":[],"text":"","language":""}'
-    _EMPTY_TRANSCRIPT = '{"segments":[],"text":"","language":""}'
+    _empty_transcript = '{"segments":[],"text":"","language":""}'
     if args.skip_asr:
         print("[②字幕] --skip-asr 跳过")
         _tp = src_dir / "transcript.json"
         if not _tp.exists():
-            _tp.write_text(_EMPTY_TRANSCRIPT, encoding="utf-8")
+            _tp.write_text(_empty_transcript, encoding="utf-8")
             (src_dir / "transcript.txt").write_text("", encoding="utf-8")
         _tp = src_dir / "transcript.json"
         if not _tp.exists():
-            _tp.write_text(_EMPTY_TRANSCRIPT, encoding="utf-8")
+            _tp.write_text(_empty_transcript, encoding="utf-8")
             (src_dir / "transcript.txt").write_text("", encoding="utf-8")
     elif not args.force and (src_dir / "transcript.json").exists():
         print("[②字幕] 已存在，跳过")
@@ -211,7 +211,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("[③关键帧] 已存在，跳过")
     else:
         print(f"[③关键帧] farthest-point 采样 {args.max_frames} 帧 ...")
-        kfs = understand.select_keyframes(src_dir / "video.mp4", src_dir, max_frames=args.max_frames)
+        kfs = understand.select_keyframes(
+            src_dir / "video.mp4", src_dir, max_frames=args.max_frames
+        )
         align = understand.align_keyframes(src_dir / "transcript.json", kfs)
         (src_dir / "keyframes_align.json").write_text(
             json.dumps(align, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -275,9 +277,9 @@ def cmd_ingest(args: argparse.Namespace) -> int:
             src = ingest._resolve_short_url(src)
         video_id = ingest.parse_douyin_id(src)
         src_dir = cfg.data_dir / "sources" / f"douyin_{video_id}"
-        r = ingest.fetch_douyin(src, src_dir)
+        r = ingest.fetch_douyin(src, src_dir)  # type: ignore[assignment]
         print(f"[OK] {r.title}")
-        print(f"     video_id={r.video_id} 时长={r.duration}s")
+        print(f"     video_id={r.video_id} 时长={r.duration}s")  # type: ignore[attr-defined]
         print(f"     视频: {r.video_path} ({r.video_path.stat().st_size // 1024}KB)")
         print(f"     音频: {r.audio_path} ({r.audio_path.stat().st_size // 1024}KB)")
     else:
@@ -299,8 +301,8 @@ def cmd_understand(args: argparse.Namespace) -> int:
     if args.skip_asr:
         print("[字幕] --skip-asr 跳过")
         if not (src / "transcript.json").exists():
-            _EMPTY = '{"segments":[],"text":"","language":""}'
-            (src / "transcript.json").write_text(_EMPTY, encoding="utf-8")
+            _empty = '{"segments":[],"text":"","language":""}'
+            (src / "transcript.json").write_text(_empty, encoding="utf-8")
             (src / "transcript.txt").write_text("", encoding="utf-8")
     elif not args.force and (src / "transcript.json").exists():
         print("[字幕] 已存在，跳过")
@@ -369,8 +371,10 @@ def cmd_verify(args: argparse.Namespace) -> int:
         head = f"{cat}/" if cat else ""
         if form == "MCP":
             mcp = s.get("mcp") or {}
-            print(f"   [{i + 1}/{n}] 解析 MCP {s['name']}"
-                  f"（{mcp.get('transport', 'stdio')}）...", flush=True)
+            print(
+                f"   [{i + 1}/{n}] 解析 MCP {s['name']}（{mcp.get('transport', 'stdio')}）...",
+                flush=True,
+            )
         elif form == "repo":
             print(f"   [{i + 1}/{n}] 探仓库 {s.get('repo', '') or s['name']} ...", flush=True)
         else:
@@ -386,13 +390,19 @@ def cmd_verify(args: argparse.Namespace) -> int:
     print("\n" + "=" * 60)
     form = summary.get("form", "Skill")
     if form == "MCP":
-        print(f"✅ MCP 形态核实：解析命中 {summary['item_total']} 个 / unresolved {summary.get('unresolved_count', 0)} 个")
+        print(
+            f"✅ MCP 形态核实：解析命中 {summary['item_total']} 个 / unresolved {summary.get('unresolved_count', 0)} 个"
+        )
         print(f"   安装清单：{summary['install_list']}")
     elif form == "repo":
-        print(f"✅ repo 形态核实：待 clone 仓库 {summary['item_total']} 个 / unresolved {summary.get('unresolved_count', 0)} 个")
+        print(
+            f"✅ repo 形态核实：待 clone 仓库 {summary['item_total']} 个 / unresolved {summary.get('unresolved_count', 0)} 个"
+        )
         print(f"   安装清单：{summary['install_list']}")
     else:
-        print(f"✅ 一手核实：{summary['verified_repo']}（⭐{summary['stars']}，{summary['stars_observed_at']}）")
+        print(
+            f"✅ 一手核实：{summary['verified_repo']}（⭐{summary['stars']}，{summary['stars_observed_at']}）"
+        )
         print(f"   定位方式：{summary['how_resolved']}")
         print(f"   全仓 skill：{summary['skill_total']} 个 → {summary['install_list']}")
     print(f"   plan.json 纠正 {len(summary['corrections'])} 处：")
@@ -441,13 +451,15 @@ def cmd_dedup(args: argparse.Namespace) -> int:
     bc = summary["baseline"]["counts"]
     s = summary["summary"]
     print("\n" + "=" * 60)
-    print(f"基准：{bc['distinct']} 个 distinct skill（磁盘 {bc['disk_entries']} + 台账 {bc['registry_rows']} 行）")
+    print(
+        f"基准：{bc['distinct']} 个 distinct skill（磁盘 {bc['disk_entries']} + 台账 {bc['registry_rows']} 行）"
+    )
     print(f"      状态分布：{bc['by_status']}")
     print(f"install_list {s['total']} 项判定：new={s['new']}  merge={s['merge']}  skip={s['skip']}")
     print(f"报告 → {summary['dedup_path']}")
     merges = [d for d in summary["decisions"] if d["decision"] == "merge"]
     if merges:
-        print(f"\nmerge 候选（建议人工确认整并，不自动决定）：")
+        print("\nmerge 候选（建议人工确认整并，不自动决定）：")
         for d in merges:
             print(f"  - {d['name']} → {d['target']}  [{', '.join(d.get('shared', []))}]")
     print("=" * 60)
@@ -477,9 +489,13 @@ def cmd_recommend(args: argparse.Namespace) -> int:
     if mode == rec.MODE_AI:
         # D21 前置：文本模型配置须完整，否则不烧 token、不走死路（提示用 keyword/manual）
         if not cfg.text.is_complete:
-            print("[ERR] ai 模式需文本模型配置（D21 前置），但 .env 缺 base_url/api_key/model 之一。")
+            print(
+                "[ERR] ai 模式需文本模型配置（D21 前置），但 .env 缺 base_url/api_key/model 之一。"
+            )
             print(f"      text={cfg.text.key_masked}")
-            print("      请先补 .env，或改用 --mode keyword（规则打分）/ --mode manual（人工勾选），都不烧 token。")
+            print(
+                "      请先补 .env，或改用 --mode keyword（规则打分）/ --mode manual（人工勾选），都不烧 token。"
+            )
             return 1
 
     # ---- 读一手数据 ----
@@ -508,16 +524,28 @@ def cmd_recommend(args: argparse.Namespace) -> int:
     # ---- 按 mode 给 new 候选打分 / 人工勾选 / ai 判断 ----
     if mode == rec.MODE_KEYWORD:
         new_js = rec.score_keyword_batch(
-            decisions, profile, descriptions=descriptions, usability=usability_map)
+            decisions, profile, descriptions=descriptions, usability=usability_map
+        )
     elif mode == rec.MODE_AI:
         from . import llm
-        print(f"   [ai] 烧 token 调文本模型 {cfg.text.model}，分批判断（用户在场监控；--limit={args.limit}）...")
+
+        print(
+            f"   [ai] 烧 token 调文本模型 {cfg.text.model}，分批判断（用户在场监控；--limit={args.limit}）..."
+        )
+
         def _on_batch(i, n, bs, ok):
             tag = "ok" if ok else "FAIL→整批降级「不值得装」"
             print(f"   [ai] 批 {i}/{n}（{bs} 条）→ {tag}")
+
         new_js = rec.judge_ai(
-            decisions, profile, descriptions=descriptions, usability=usability_map,
-            cfg=cfg, chat_fn=llm.chat_text, limit=args.limit, on_batch=_on_batch,
+            decisions,
+            profile,
+            descriptions=descriptions,
+            usability=usability_map,
+            cfg=cfg,
+            chat_fn=llm.chat_text,
+            limit=args.limit,
+            on_batch=_on_batch,
         )
     else:  # manual
         new_js = rec.pick_manual(decisions, descriptions=descriptions, usability=usability_map)
@@ -525,7 +553,9 @@ def cmd_recommend(args: argparse.Namespace) -> int:
     # ---- 合并 skip/merge（trivial 兜底）+ 装配报告 ----
     judgments = rec.merge_judgments(decisions, new_js)
     report = rec.assemble_report(
-        decisions, judgments, mode=mode,
+        decisions,
+        judgments,
+        mode=mode,
         source_video=dedup_data.get("source_video", ""),
         repo=dedup_data.get("install_list_repo", "") or ilist.get("verified_repo", ""),
         source_skip_reason=args.source_skip or "",
@@ -539,13 +569,19 @@ def cmd_recommend(args: argparse.Namespace) -> int:
     sm = report["summary"]
     print("\n" + "=" * 60)
     print(f"源级建议：{sv}" + (f"（理由：{args.source_skip}）" if args.source_skip else ""))
-    print(f"候选汇总：total={sm['total']}  by_verdict={sm['by_verdict']}  approved={sm['approved']}")
+    print(
+        f"候选汇总：total={sm['total']}  by_verdict={sm['by_verdict']}  approved={sm['approved']}"
+    )
     approved = report["approved"]
     shown = approved[:20]
-    print(f"approved（install 该装的子集，D20 挑着买）：{shown}{' ...' if len(approved) > 20 else ''}")
+    print(
+        f"approved（install 该装的子集，D20 挑着买）：{shown}{' ...' if len(approved) > 20 else ''}"
+    )
     print(f"报告 → {out_path}")
     print("=" * 60)
-    print("刹车：判断步只出 recommend.json，未安装。install 只装 approved 子集（须另跑 install --approve）。")
+    print(
+        "刹车：判断步只出 recommend.json，未安装。install 只装 approved 子集（须另跑 install --approve）。"
+    )
     return 0
 
 
@@ -571,11 +607,17 @@ def cmd_install(args: argparse.Namespace) -> int:
         head = f"{form}/{cat}" if cat else form
         if form == "MCP":
             mcp = s.get("mcp") or {}
-            print(f"   [{i + 1}/{n}] 注册 MCP 服务器 {head}/{s['name']}"
-                  f"（{mcp.get('transport', 'stdio')} -s {mcp.get('scope', 'user')}）...", flush=True)
+            print(
+                f"   [{i + 1}/{n}] 注册 MCP 服务器 {head}/{s['name']}"
+                f"（{mcp.get('transport', 'stdio')} -s {mcp.get('scope', 'user')}）...",
+                flush=True,
+            )
         elif form == "repo":
-            print(f"   [{i + 1}/{n}] clone {head}/{s['name']}"
-                  f"（{s.get('repo', '')}，分支 {s.get('branch', 'main')}）...", flush=True)
+            print(
+                f"   [{i + 1}/{n}] clone {head}/{s['name']}"
+                f"（{s.get('repo', '')}，分支 {s.get('branch', 'main')}）...",
+                flush=True,
+            )
         else:
             print(f"   [{i + 1}/{n}] 装 {head}/{s['name']}（整目录拷）...", flush=True)
 
@@ -585,10 +627,16 @@ def cmd_install(args: argparse.Namespace) -> int:
 
     try:
         r = install_mod.install(
-            src, target_dir=args.target_dir, approve=args.approve,
-            include_deprecated=args.include_deprecated, on_progress=on_progress,
-            ai_infer=args.ai_infer, no_trial=args.no_trial, refresh_cache=args.refresh_cache,
-            chat_fn=chat_fn, prompt_fn=None,
+            src,
+            target_dir=args.target_dir,
+            approve=args.approve,
+            include_deprecated=args.include_deprecated,
+            on_progress=on_progress,
+            ai_infer=args.ai_infer,
+            no_trial=args.no_trial,
+            refresh_cache=args.refresh_cache,
+            chat_fn=chat_fn,
+            prompt_fn=None,
         )
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
@@ -615,17 +663,23 @@ def cmd_install(args: argparse.Namespace) -> int:
         if form == "MCP":
             cmd = it.get("command", "")
             argstr = " ".join(it.get("args", []))
-            print(f"  - {it['name']}（MCP，{it.get('transport', 'stdio')} -s {it.get('scope', 'user')}，"
-                  f"{cmd} {argstr}）{flag}")
+            print(
+                f"  - {it['name']}（MCP，{it.get('transport', 'stdio')} -s {it.get('scope', 'user')}，"
+                f"{cmd} {argstr}）{flag}"
+            )
         elif form == "repo":
-            print(f"  - {it['name']}（repo，clone → {it.get('repo', '')}，"
-                  f"分支 {it.get('branch', 'main')}）{flag}")
+            print(
+                f"  - {it['name']}（repo，clone → {it.get('repo', '')}，"
+                f"分支 {it.get('branch', 'main')}）{flag}"
+            )
         else:
             print(f"  - {it['name']}（Skill → {it.get('target', '')}）{flag}")
     if r["skipped_merge"]:
         print(f"跳过 merge（人工确认）：{len(r['skipped_merge'])} 个 → {r['skipped_merge']}")
     if r["skipped_deprecated"]:
-        print(f"跳过 deprecated：{len(r['skipped_deprecated'])} 个 → {r['skipped_deprecated']}（--include-deprecated 可装）")
+        print(
+            f"跳过 deprecated：{len(r['skipped_deprecated'])} 个 → {r['skipped_deprecated']}（--include-deprecated 可装）"
+        )
     if r["skipped_already"]:
         print(f"跳过已装/已整并：{len(r['skipped_already'])} 个")
     unresolved = r.get("unresolved") or []
@@ -646,20 +700,30 @@ def cmd_install(args: argparse.Namespace) -> int:
             if form == "MCP":
                 usab = s.get("usability", "ready")
                 flag = f" [{usab}]" if usab and usab != "ready" else ""
-                print(f"  - {s['name']}（MCP，{s.get('registered_via')}，scope={s.get('scope')}，"
-                      f"{s.get('transport', 'stdio')}）→ {s.get('path', '')}{flag}")
+                print(
+                    f"  - {s['name']}（MCP，{s.get('registered_via')}，scope={s.get('scope')}，"
+                    f"{s.get('transport', 'stdio')}）→ {s.get('path', '')}{flag}"
+                )
             elif form == "repo":
                 usab = s.get("usability", "ready")
                 flag = f" [{usab}]" if usab and usab != "ready" else ""
                 cloned = "新克隆" if s.get("cloned_now") else "已存在(幂等跳过)"
-                deps = "依赖✅" if s.get("deps_installed") else f"依赖待补({s.get('deps_method', 'none')})"
-                print(f"  - {s['name']}（repo，{s.get('repo', '')}@{s.get('branch', 'main')}，"
-                      f"{cloned}，{deps}）→ {s.get('path', '')}{flag}")
+                deps = (
+                    "依赖✅"
+                    if s.get("deps_installed")
+                    else f"依赖待补({s.get('deps_method', 'none')})"
+                )
+                print(
+                    f"  - {s['name']}（repo，{s.get('repo', '')}@{s.get('branch', 'main')}，"
+                    f"{cloned}，{deps}）→ {s.get('path', '')}{flag}"
+                )
             else:
                 print(f"  - {s['name']}（{s.get('file_count', 0)} 文件）→ {s.get('path', '')}")
         if r.get("skipped_credentials"):
             names = ", ".join(d["name"] for d in r["skipped_credentials"])
-            print(f"   跳过需凭证：{len(r['skipped_credentials'])} 个 → {names}（配 credential_env 后重跑）")
+            print(
+                f"   跳过需凭证：{len(r['skipped_credentials'])} 个 → {names}（配 credential_env 后重跑）"
+            )
         if r.get("skipped_config"):
             names = ", ".join(d["name"] for d in r["skipped_config"])
             print(f"   跳过需配置：{len(r['skipped_config'])} 个 → {names}（替换占位符后重跑）")
@@ -739,8 +803,10 @@ def cmd_record(args: argparse.Namespace) -> int:
     else:
         print(f"✅ 代码生成完成：仓库 {r['verified_repo']}")
     print(f"   本源安装会话：{r['sessions']} 次；本次新装 {len(r['this_run_installed'])} 个")
-    print(f"   落盘核对：磁盘 {ig['disk_active_distinct']} == 台账 {ig['registry_active']}"
-          f" → {'✅一致' if ig['ok'] else '⚠️不一致'}")
+    print(
+        f"   落盘核对：磁盘 {ig['disk_active_distinct']} == 台账 {ig['registry_active']}"
+        f" → {'✅一致' if ig['ok'] else '⚠️不一致'}"
+    )
     if ig["orphans"]:
         print(f"   孤儿（磁盘有/台账无）：{ig['orphans']}")
     if ig["missing"]:
@@ -763,15 +829,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--version", action="version", version=f"skillbrew {__version__}")
     parser.add_argument(
-        "--runtime", choices=["claude", "codex"], default=None,
+        "--runtime",
+        choices=["claude", "codex"],
+        default=None,
         help="显式指定 agent 运行时（默认自动探测：CODEX_HOME 或 ~/.codex 存在则 codex，否则 claude）",
     )
     parser.add_argument(
-        "--clones-dir", default=None, metavar="DIR",
+        "--clones-dir",
+        default=None,
+        metavar="DIR",
         help="覆盖默认 clone 落地目录（env SKILLBREW_CLONES_DIR 优先级更高）",
     )
     parser.add_argument(
-        "--mcp-json", default=None, metavar="PATH",
+        "--mcp-json",
+        default=None,
+        metavar="PATH",
         help="覆盖默认 MCP 配置文件路径（env SKILLBREW_CLAUDE_JSON 优先级更高）",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -791,7 +863,9 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--max-frames", type=int, default=5, help="关键帧数")
     p_run.add_argument("--max-workers", type=int, default=3, help="视觉并发数")
     p_run.add_argument("--skip-asr", action="store_true", help="跳过字幕转写")
-    p_run.add_argument("--skip-vision", action="store_true", help="跳过视觉看图（省时，纯字幕消化）")
+    p_run.add_argument(
+        "--skip-vision", action="store_true", help="跳过视觉看图（省时，纯字幕消化）"
+    )
     p_run.add_argument("--force", action="store_true", help="不跳过已有产物，重跑")
     p_run.set_defaults(func=cmd_run)
 
@@ -813,15 +887,22 @@ def main(argv: list[str] | None = None) -> int:
     p_plan.add_argument("source", help="源目录 或 B站URL/BV号")
     p_plan.set_defaults(func=cmd_plan)
 
-    p_ver = sub.add_parser("verify", help="溯源：回 GitHub 取一手资料，纠正草稿计划 + 出机器安装清单")
+    p_ver = sub.add_parser(
+        "verify", help="溯源：回 GitHub 取一手资料，纠正草稿计划 + 出机器安装清单"
+    )
     p_ver.add_argument("source", help="源目录 或 B站URL/BV号")
     p_ver.add_argument("--repo", default=None, help="手动指定 owner/repo（绕过自动搜索）")
     p_ver.set_defaults(func=cmd_verify)
 
-    p_ded = sub.add_parser("dedup", help="去重：扫本地已装 skill 建基准，比 install_list，判 new/merge/skip")
+    p_ded = sub.add_parser(
+        "dedup", help="去重：扫本地已装 skill 建基准，比 install_list，判 new/merge/skip"
+    )
     p_ded.add_argument("source", help="源目录 或 B站URL/BV号")
     p_ded.add_argument(
-        "--skills-dir", action="append", default=None, metavar="DIR",
+        "--skills-dir",
+        action="append",
+        default=None,
+        metavar="DIR",
         help="追加要扫描的 Skill 目录（可重复；默认已含运行时默认 Skill 目录）",
     )
     p_ded.set_defaults(func=cmd_dedup)
@@ -832,42 +913,62 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_rec_judge.add_argument("source", help="源目录 或 B站URL/BV号")
     p_rec_judge.add_argument(
-        "--skills-dir", action="append", default=None, metavar="DIR",
+        "--skills-dir",
+        action="append",
+        default=None,
+        metavar="DIR",
         help="追加扫描目录（默认已含运行时默认 Skill 目录，与去重同口径）",
     )
     p_rec_judge.add_argument(
-        "--mode", choices=["keyword", "manual", "ai"], default="keyword",
+        "--mode",
+        choices=["keyword", "manual", "ai"],
+        default="keyword",
         help="判断模式：keyword=规则打分(默认,无 key) / manual=人工勾选(无 key) / ai=文本模型(烧 token,需在场)",
     )
     p_rec_judge.add_argument(
-        "--source-skip", default=None, metavar="REASON",
+        "--source-skip",
+        default=None,
+        metavar="REASON",
         help="整源跳过：手判该源非技能集（如配置商店）否决整源，approved 置空（D19 人定）",
     )
     p_rec_judge.add_argument(
-        "--limit", type=int, default=None, metavar="N",
+        "--limit",
+        type=int,
+        default=None,
+        metavar="N",
         help="ai 模式成本控制：只判前 N 条 new 候选（未判到的由 merge 兜底「不值得装」）",
     )
     p_rec_judge.set_defaults(func=cmd_recommend)
 
     p_inst = sub.add_parser(
-        "install", help="安装：照 dedup 判定的 new skill，整目录拷到运行时默认 Skill 目录并登记台账",
+        "install",
+        help="安装：照 dedup 判定的 new skill，整目录拷到运行时默认 Skill 目录并登记台账",
     )
     p_inst.add_argument("source", help="源目录 或 B站URL/BV号")
-    p_inst.add_argument("--approve", action="store_true", help="真落盘 + 写台账（默认 dry-run，只列计划）")
     p_inst.add_argument(
-        "--include-deprecated", action="store_true", help="连 deprecated skill 一起装（默认跳过）",
+        "--approve", action="store_true", help="真落盘 + 写台账（默认 dry-run，只列计划）"
     )
-    p_inst.add_argument("--target-dir", default=None, help="安装目标目录（默认运行时默认 Skill 目录）")
     p_inst.add_argument(
-        "--ai-infer", action="store_true",
+        "--include-deprecated",
+        action="store_true",
+        help="连 deprecated skill 一起装（默认跳过）",
+    )
+    p_inst.add_argument(
+        "--target-dir", default=None, help="安装目标目录（默认运行时默认 Skill 目录）"
+    )
+    p_inst.add_argument(
+        "--ai-infer",
+        action="store_true",
         help="对 verify 标 unresolved 的 MCP，开 AI 读源头仓库推断装法+试跑验证+缺项补全（D23，默认关）",
     )
     p_inst.add_argument(
-        "--no-trial", action="store_true",
+        "--no-trial",
+        action="store_true",
         help="跳过装前试跑（推断后不验证直接装，未验证不入缓存）",
     )
     p_inst.add_argument(
-        "--refresh-cache", action="store_true",
+        "--refresh-cache",
+        action="store_true",
         help="忽略本地缓存重新推断装法（强刷已缓存的装法）",
     )
     p_inst.set_defaults(func=cmd_install)
@@ -878,7 +979,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_rec.add_argument("source", help="源目录 或 B站URL/BV号")
     p_rec.add_argument(
-        "--skills-dir", action="append", default=None, metavar="DIR",
+        "--skills-dir",
+        action="append",
+        default=None,
+        metavar="DIR",
         help="追加扫描目录（默认读 dedup.json 的 baseline.skill_dirs，与去重同口径）",
     )
     p_rec.set_defaults(func=cmd_record)
@@ -900,6 +1004,7 @@ def main(argv: list[str] | None = None) -> int:
 def _exit_code(exc: BaseException) -> int:
     """把异常映射到进程退出码，给 main() 用。"""
     from .errors import SkillbrewError
+
     if isinstance(exc, SkillbrewError):
         print(f"\n[FAIL] {exc}", file=sys.stderr)
         if exc.hint:
@@ -910,6 +1015,7 @@ def _exit_code(exc: BaseException) -> int:
         return 130
     # 非预期异常：完整 traceback 供调试
     import traceback as _tb
+
     _tb.print_exc()
     return 2
 
