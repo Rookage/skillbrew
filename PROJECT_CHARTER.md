@@ -1,5 +1,7 @@
 # 项目章程 PROJECT_CHARTER（核心锚定文件）
 
+> English note: this charter is the long-form decision log for SkillBREW. The public README and landing page are bilingual; this file keeps the original Chinese decision history, with key positioning and terms mirrored in English at the top.
+
 > 本文件是项目的"北极星"，作为开发与决策的统一基准。
 > 状态：核心能力已落地 · 8 步管线端到端跑通（B站 / 抖音双源）· 6 个 MCP 服务器完成真实安装并通过冒烟测试（含 1 个 AI 推断安装）· 通用安装器（四级降级链：缓存→目录→AI推断→试跑→弹窗）· 双运行时中立（Claude Code / Codex CLI）。
 > 具体能力清单与计数以本地 `RECORD.md` 台账为准，不在文档中硬编码。
@@ -10,22 +12,28 @@
 
 > **看过、收藏过、装过但忘了，不等于真正拥有一个能力。**
 >
+> **Seeing, saving, or half-installing a tool is not the same as owning a capability.**
+>
 > 技能酿造局：把散落在视频、网页、README 和推荐清单里的 Agent 能力，酿成可验证、可安装、可追踪的一套本地能力库。
+>
+> SkillBREW turns scattered agent tips from videos, webpages, READMEs, and tool lists into a verified, installable, trackable local capability cellar.
 
 一个 **AI Agent 能力管理器**：把视频 / 报告 / 文件 / 网页丢进去，自动消化成「AI 可执行计划」，授权后按步安装成 AI 的真实能力（Skill / MCP / 代码 / 配置），并维护一张可去重、可累加、可视化的能力台账。开源，本地优先，面向 Claude Code / Codex / MCP 工具链。
+
+An **AI agent capability manager**: feed it videos, reports, files, or webpages; it digests them into an executable plan, installs real capabilities only after approval, and keeps a deduplicated, cumulative, visual ledger. Open source, local-first, and aimed at Claude Code / Codex / MCP workflows.
 
 ## 1. 核心概念（术语统一）
 
 | 术语 | 含义 | 类比 |
 |------|------|------|
-| **素材 Source** | 输入的视频 / 报告 / 文件 / 网页（不止视频） | 原料（葡萄） |
-| **消化 Digest** | 把素材转成结构化理解（含画面，非仅字幕） | 发酵过程 |
-| **执行计划 Plan** | 消化后产出的「AI 可执行步骤清单」，每步可授权 | 酿造配方 |
-| **能力产物 Artifact** | 计划落地后的实物：Skill / MCP / 代码 / 配置 / Prompt / CLI 工具 / Docker 镜像 / API 服务 / 数据集。形态由计划内容决定，不预设 | 成品酒 |
-| **能力台账 Registry** | 所有已安装能力的结构化登记表（去重/归并/分类/查询/移除） | 酒窖清单 |
-| **安装记录 Record** | 每次执行留一份 README 式可分享记录（装了什么、怎么装、可移除） | 品鉴笔记 |
-| **看板 Dashboard** | 累加可视化（本次能力 + 历史归并后的整体能力） | 酒窖全景图 |
-| **溯源 Verify** | 介绍到 GitHub/Anthropic/论文的素材，回原厂取一手资料，不只用二手 | 产地认证 |
+| **素材 Source** | 输入的视频 / 报告 / 文件 / 网页（不止视频） | Raw material |
+| **消化 Digest** | 把素材转成结构化理解（含画面，非仅字幕） | Fermentation |
+| **执行计划 Plan** | 消化后产出的「AI 可执行步骤清单」，每步可授权 | Brewing recipe |
+| **能力产物 Artifact** | 计划落地后的实物：Skill / MCP / 代码 / 配置 / Prompt / CLI 工具 / Docker 镜像 / API 服务 / 数据集。形态由计划内容决定，不预设 | Finished bottle |
+| **能力台账 Registry** | 所有已安装能力的结构化登记表（去重/归并/分类/查询/移除） | Cellar inventory |
+| **安装记录 Record** | 每次执行留一份 README 式可分享记录（装了什么、怎么装、可移除） | Tasting note |
+| **看板 Dashboard** | 累加可视化（本次能力 + 历史归并后的整体能力） | Cellar map |
+| **溯源 Verify** | 介绍到 GitHub/Anthropic/论文的素材，回原厂取一手资料，不只用二手 | Provenance check |
 
 > **酿造隐喻**：素材是葡萄，消化是发酵，计划是配方，产物是成品酒，台账是酒窖清单，看板是全景图。每一步都可追溯、可审计、可回滚。
 

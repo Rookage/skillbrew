@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "skillbrew"
 version = "0.0.1"
-description = "技能酿造局：把视频、网页和 README 里的 Agent 能力酿成可验证、可安装、可追踪的本地能力库。"
+description = "技能酿造局 / SkillBREW: turn scattered agent tips into a verified, installable, trackable local capability cellar."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
