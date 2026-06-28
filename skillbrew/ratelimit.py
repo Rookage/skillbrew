@@ -67,21 +67,21 @@ class TokenBucket:
         while True:
             with self._lock:
                 self._refill_unlocked()
-                if self._tokens >= tokens:
-                    self._tokens -= tokens
+                if self._tokens >= tokens - 1e-9:  # 浮点容差：几乎够了就当够了
+                    self._tokens = max(0.0, self._tokens - tokens)
                     return
                 # 需要等多久才凑够
-                need = tokens - self._tokens
+                need = max(0.0, tokens - self._tokens)
                 wait = need / self._rate if self._rate > 0 else float("inf")
             # 锁外 sleep，不阻塞其他线程 refill 观察
-            if wait > 0:
+            if wait > 1e-12:
                 self._sleep(wait)
 
     def remaining(self) -> float:
         """当前瞬时剩余令牌数（调试/测试用，下一刻就可能变）。"""
         with self._lock:
             self._refill_unlocked()
-            return self._tokens
+            return max(0.0, self._tokens)  # 浮点容差：不返回负数
 
     def set_remaining(self, n: float) -> None:
         """用服务器权威值覆盖本地估算（X-RateLimit-Remaining）。"""
