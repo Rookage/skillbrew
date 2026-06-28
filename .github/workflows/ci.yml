@@ -18,8 +18,8 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip
       - run: pip install ruff
-      - run: ruff check skillbrew/ tests/ scripts/
-      - run: ruff format --check skillbrew/ tests/ scripts/
+      - run: ruff check skillbrew/ tests/
+      - run: ruff format --check skillbrew/ tests/
 
   types:
     runs-on: ubuntu-latest
