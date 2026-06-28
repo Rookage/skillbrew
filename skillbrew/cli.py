@@ -282,6 +282,17 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         print(f"     video_id={r.video_id} 时长={r.duration}s")  # type: ignore[attr-defined]
         print(f"     视频: {r.video_path} ({r.video_path.stat().st_size // 1024}KB)")
         print(f"     音频: {r.audio_path} ({r.audio_path.stat().st_size // 1024}KB)")
+    elif "youtube.com" in src or "youtu.be" in src:
+        # YouTube
+        video_id = ingest.parse_youtube_id(src)
+        src_dir = cfg.data_dir / "sources" / f"yt_{video_id}"
+        r = ingest.fetch_youtube(src, src_dir)  # type: ignore[assignment]
+        print(f"[OK] {r.title}")
+        print(f"     video_id={r.video_id} 时长={r.duration}s")  # type: ignore[attr-defined]
+        print(f"     视频: {r.video_path} ({r.video_path.stat().st_size // 1024}KB)")
+        print(f"     音频: {r.audio_path} ({r.audio_path.stat().st_size // 1024}KB)")
+        if r.subtitle_path:  # type: ignore[attr-defined]
+            print(f"     字幕: {r.subtitle_path}")  # type: ignore[attr-defined]
     elif src.startswith("http://") or src.startswith("https://"):
         # 网页
         src_dir = cfg.data_dir / "sources" / f"web_{hash(src) & 0xFFFFFFFF:08x}"
