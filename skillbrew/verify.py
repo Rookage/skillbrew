@@ -35,10 +35,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import warnings
-from datetime import datetime
 from pathlib import Path
 
 from . import mcp_catalog, ratelimit
+from ._utils import _now_iso
 
 API_BASE = "https://api.github.com"
 RAW_BASE = "https://raw.githubusercontent.com"
@@ -48,10 +48,6 @@ _TIMEOUT = 30.0
 _SEARCH_CANDIDATES = 8  # 搜索取前 N 个候选再逐个校验
 _MAX_RETRIES = 3  # 5xx/网络瞬时错误重试次数（git/trees 端点偶发 504）
 _RETRY_BACKOFF = 2.0  # 退避基数秒：第 n 次重试睡 n*BACKOFF 秒
-
-
-def _now_iso() -> str:
-    return datetime.now().isoformat(timespec="seconds")
 
 
 def _get(

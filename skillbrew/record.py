@@ -28,10 +28,7 @@ from pathlib import Path
 
 from . import config, registry
 from . import dedup as dedup_mod  # 复用 scan_local_skills / _key 做落盘核对
-
-
-def _now_iso() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+from ._utils import _now_iso
 
 
 def _today() -> str:
@@ -699,15 +696,15 @@ def _gen_record(g: dict) -> str:
     L.append("## 4. 落盘核对（你落盘就是什么）\n")
     L.append(
         f"实时扫磁盘 vs 台账 active（扫描目录：{[str(d) for d in g['skill_dirs']]}；"
-        f"MCP 读 `~/.claude.json` 注册表）：\n"
+        f"MCP 读 `~/.claude.json` 注册表；repo 扫 `~/.claude/clones/`）：\n"
     )
     L.append(
         f"- 磁盘 active distinct：**{g['disk_distinct']}**"
-        f"（Skill 目录 {g['disk_skill_distinct']} + MCP 注册 {g['disk_mcp_count']}）"
+        f"（Skill 目录 {g['disk_skill_distinct']} + MCP 注册 {g['disk_mcp_count']} + repo 克隆 {g['disk_repo_count']}）"
     )
     L.append(
         f"- 台账 active：**{len(active)}**"
-        f"（Skill {len(g['reg_active_skill'])} + MCP {len(g['reg_active_mcp'])}）"
+        f"（Skill {len(g['reg_active_skill'])} + MCP {len(g['reg_active_mcp'])} + repo {len(g['reg_active_repo'])}）"
     )
     L.append(
         f"- 孤儿（磁盘有 / 台账无）：{len(g['orphans'])} 个"

@@ -7,16 +7,12 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from .._utils import _now_iso as _now_iso  # noqa: F401 委托到顶层唯一权威实现，本模块重导出
+
 UA = "skillbrew"  # GitHub raw 也要求带 User-Agent
 _TIMEOUT = 30.0
 _MAX_RETRIES = 3  # 5xx/网络瞬时错误重试（raw 偶发 504，同 verify._get）
 _RETRY_BACKOFF = 2.0
-
-
-def _now_iso() -> str:
-    from datetime import datetime
-
-    return datetime.now().isoformat(timespec="seconds")
 
 
 def _fetch_bytes(url: str) -> bytes:

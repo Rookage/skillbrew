@@ -37,6 +37,7 @@ import re
 from pathlib import Path
 
 from . import config, registry
+from ._utils import _now_iso
 from .verify import parse_frontmatter, parse_github_urls  # 复用 frontmatter 解析 + GitHub URL 解析
 
 SKILL_MD = "SKILL.md"
@@ -44,12 +45,6 @@ SKILL_MD = "SKILL.md"
 # 的整并候选，宁少勿滥——2 个泛词重叠（如 [skill, agent]）多半是假阳性，留给人看
 # 反成噪音；3 个有意义词重叠才值得一标。漏判的弱重叠只会落 new 多装一份，代价小。
 _MERGE_MIN_SHARED = 3
-
-
-def _now_iso() -> str:
-    from datetime import datetime
-
-    return datetime.now().isoformat(timespec="seconds")
 
 
 def _key(s: str) -> str:
