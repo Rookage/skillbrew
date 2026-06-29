@@ -159,6 +159,22 @@ LOGLEVEL=DEBUG skillbrew verify data/sources/<id>/
 skillbrew install data/sources/<id>/ --approve --ai-infer
 ```
 
+市场搜索与直装 / Marketplace search and direct install:
+
+```bash
+# 在市场搜 MCP（默认 smithery，可切官方 registry）
+skillbrew search "github"
+skillbrew search "github" --market registry
+
+# 看某个 MCP 的详情
+skillbrew info github
+skillbrew info "ac.inference.sh/mcp" --market registry
+
+# 从市场拉详情自动取远程 URL（默认 dry-run，--approve 才真写）
+skillbrew add github --from smithery
+skillbrew add github --from registry --approve
+```
+
 ---
 
 ## Current Limitations / 可信边界
@@ -175,6 +191,7 @@ SkillBREW is early: the skeleton runs, the core path is real, but the project is
 - 默认 dry-run，`--approve` 才写入。 / Dry-run by default; `--approve` writes.
 - 本地扫描 + 台账扫描 + 形态感知去重。 / Local scan + registry scan + form-aware deduplication.
 - `recommend` 支持 keyword / manual / ai 三种判断模式。 / `recommend` supports keyword, manual, and AI judging modes.
+- MCP 市场搜索与直装：`search`/`info`/`add` 跨 smithery 与官方 registry 多市场。 / MCP marketplace search & direct install: `search`/`info`/`add` across Smithery and the official registry.
 - 结构化错误提示，尽量避免裸异常。 / Structured errors instead of raw crashes where possible.
 - Claude Code / Codex 运行时识别。 / Runtime detection for Claude Code and Codex.
 - CI 覆盖 ruff、mypy、pytest 和文档同步检查。 / CI covers ruff, mypy, pytest, and docs-sync checks.
@@ -183,8 +200,6 @@ SkillBREW is early: the skeleton runs, the core path is real, but the project is
 
 - Codex 的 MCP TOML 写入仍在演进中，需要更多真实场景验证。  
   Codex MCP `config.toml` writing is evolving and needs more real-world round-trip tests.
-- MCP Marketplace 对接还在 RFC 阶段。  
-  MCP Marketplace integration is still in RFC stage.
 - 单组件挑装（D20）尚未完全落地，当前多数 skill 仍按整目录拷贝。  
   Per-component selective install (D20) is not fully wired; most skills still copy whole directories.
 - 中间产物的 schema 还在 dataclass 阶段，未固化成正式版本化协议。  
@@ -262,6 +277,7 @@ These are not the whole ecosystem. They are verified seeds used by the catalog/c
   - `llm.py`：OpenAI-compatible LLM 抽象，文本/视觉分离。 / OpenAI-compatible LLM abstraction with separate text and vision providers.
   - `_logging.py`：stdlib logging 配置；stdout 走产品输出，stderr 走诊断与 spinner。/ stdlib logging setup; product output on stdout, diagnostics and spinner on stderr.
   - `registry.py`：已装能力台账；`mcp_catalog.py`：已验证 MCP 种子；`ratelimit.py`、`errors.py`、`notify.py`、`_utils.py`：辅助件。/ Installed-registry ledger; verified MCP seeds; rate-limit, errors, notifications, shared helpers.
+  - `marketplaces/`：多市场聚合适配器层（smithery + 官方 registry），`marketplace.py` 提供 search/info。/ Multi-market adapter layer (Smithery + official registry); `marketplace.py` provides search/info.
 
 ---
 
@@ -354,7 +370,7 @@ skillbrew --runtime codex --mcp-json ~/.codex/config.toml --clones-dir ~/.codex/
 1. **文档对齐**（进行中）：README、模块地图、产物形态表追上代码现实。/ Docs catch-up: refresh README, architecture map, and artifact table to match the shipped code.
 2. **核心 schema 固化** (#24)：中间产物 dataclass 升级成版本化协议。/ Lock down versioned schemas for intermediate artifacts.
 3. **输入源适配层** (#43)：抽 `sources/` adapter，bilibili/douyin/youtube/webpage/text/marketplace 统一接口。/ Extract a `sources/` adapter layer unifying all input types.
-4. **MCP Marketplace 对接** (#27)：search/info/add 走通，复用 8 步管线。/ Integrate MCP Marketplace search/info/add, reusing the 8-step pipeline.
+4. **MCP Marketplace 对接** (#27) ✅：search/info/add 已走通，支持 smithery + 官方 registry 多市场聚合。/ Done: marketplace search/info/add shipped with multi-market aggregation (Smithery + official registry).
 5. **按需补**：tomlkit (#40/#42)、文件锁 (#19)、类型补全——撞到再做，不排队。/ On-demand: tomlkit, file locking, type-annotation backfill — done when real bugs surface, not pre-emptively.
 
 详细决策见 [PROJECT_CHARTER.md](./PROJECT_CHARTER.md) 和 GitHub issues。  
