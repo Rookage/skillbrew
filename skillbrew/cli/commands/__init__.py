@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .add import cmd_add
 from .config import cmd_config
 from .dedup import cmd_dedup
 from .doctor import cmd_doctor
@@ -16,6 +17,7 @@ from .understand import cmd_understand
 from .verify import cmd_verify
 
 __all__ = [
+    "cmd_add",
     "cmd_config",
     "cmd_dedup",
     "cmd_doctor",

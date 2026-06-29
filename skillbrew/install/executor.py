@@ -873,6 +873,166 @@ def install(
     return plan
 
 
+# ==================== add：通用 MCP 注册（issue #27 Phase 2） ====================
+
+
+def _normalize_transport(t: str | None) -> str:
+    """归一化连接方式：http/https/streamable-http → http；sse → sse；其余 → stdio。
+
+    与 _mcp_server_config 的分流保持一致（它只认 http/sse，其余按 stdio 处理），
+    兼容 Smithery 返回的 ``streamable-http`` 写法。
+    """
+    t = (t or "stdio").lower()
+    if t in ("http", "https", "streamable-http", "streamable_http"):
+        return "http"
+    if t == "sse":
+        return "sse"
+    return "stdio"
+
+
+def _mask_server(server: dict) -> dict:
+    """脱敏 server 预览：env/headers 的值换成 ``<KEY>``，只留键名（dry-run 展示用，D14 不泄密）。"""
+    out = dict(server)
+    env = out.get("env")
+    if isinstance(env, dict):
+        out["env"] = {k: f"<{k}>" for k in env}
+    hdrs = out.get("headers")
+    if isinstance(hdrs, dict):
+        out["headers"] = {k: f"<{k}>" for k in hdrs}
+    return out
+
+
+def register_mcp(
+    name: str,
+    *,
+    transport: str = "stdio",
+    url: str | None = None,
+    command: str | None = None,
+    args: list[str] | None = None,
+    env_keys: list[str] | None = None,
+    headers: dict[str, str] | None = None,
+    scope: str | None = None,
+    source: str = "",
+    approve: bool = False,
+    db_path: Path | str | None = None,
+) -> dict:
+    """注册一个 MCP 服务器进配置文件 + 登记台账（``add`` 命令后端，issue #27 Phase 2）。
+
+    通用原语：连接方式（transport）驱动——http/sse 走远程 URL，stdio 走本地命令；
+    不绑死任何市场（手动 URL/命令 或 从 Smithery 拉都行，Smithery 只是 CLI 层的可选解析器）。
+
+    复用 install 的写入器（_install_mcp_json_merge / _install_mcp_toml_merge：原子备份 +
+    mtime 并发检测 + 写后校验 + 失败回滚）和 registry 台账，不新造写入轮子。走「合并路径」
+    写配置（不调 claude CLI），跨运行时：Claude 写 ~/.claude.json，Codex 写 ~/.codex/config.toml。
+
+    - approve=False（默认）= dry-run：返回将写的 server 预览（env/headers 已脱敏），不落盘、
+      不登台账（反盲盒 D22）。
+    - approve=True = 真写 + upsert 台账 + 记会话。
+
+    env_keys 声明依赖的环境变量名，值从 os.environ 取（跟 install 凭证模型一致 D14，
+    secret 不进命令行 / 台账）；headers 直接给值（HTTP 头，写进配置）。
+    """
+    if not (name or "").strip():
+        raise RuntimeError("add 需要一个 MCP 名（注册 key）")
+    name = name.strip()
+    tport = _normalize_transport(transport)
+    scope = (scope or config.mcp_default_scope).strip().lower()
+
+    mcp: dict = {"transport": tport}
+    if tport in ("http", "sse"):
+        if not url:
+            raise RuntimeError(f"{tport} 需要 url（远程地址）")
+        mcp["url"] = url
+        if headers:
+            mcp["headers"] = dict(headers)
+        resolved_args: list[str] = []
+        sub_dirs = False
+    else:  # stdio
+        if not command:
+            raise RuntimeError("stdio 需要 command（本地命令）")
+        mcp["command"] = command
+        mcp["args"] = list(args or [])
+        resolved_args, sub_dirs = _resolve_args(mcp)
+        if _has_unresolved_placeholder(resolved_args):
+            raise RuntimeError("args 仍含未解析占位符 <…>，替换后再装")
+
+    env_keys = list(env_keys or [])
+    item: dict = {"mcp": mcp, "form": "MCP", "capability_name": name}
+    if env_keys:
+        # _inject_env 收 credential_env + env_template.keys()，值从 os.environ 取
+        item["env_template"] = {k: "" for k in env_keys}
+        item["credential_env"] = list(env_keys)
+    missing_env = [k for k in env_keys if not os.environ.get(k)]
+
+    server_preview = _mask_server(_mcp_server_config(item, resolved_args))
+
+    if not approve:
+        return {
+            "name": name,
+            "form": "MCP",
+            "transport": tport,
+            "scope": scope,
+            "approve": False,
+            "server": server_preview,
+            "path": "(dry-run 未落盘)",
+            "missing_env": missing_env,
+            "note": "dry-run：未写配置、未登台账。加 --approve 才真装。",
+        }
+
+    runtime = config.detect_runtime()
+    if runtime == "codex":
+        via = _install_mcp_toml_merge(name, item, scope, tport, resolved_args)
+    else:
+        via = _install_mcp_json_merge(name, item, scope, tport, resolved_args)
+
+    conn = registry.connect(db_path if db_path is not None else registry.DB_PATH)
+    try:
+        before_row = conn.execute("SELECT COUNT(*) FROM skills WHERE status='active'").fetchone()
+        before = int(before_row[0]) if before_row else 0
+        registry.upsert_skill(
+            conn,
+            name,
+            display_name=name,
+            category="",
+            form="MCP",
+            source=source or name,
+            source_video="",
+            install_path=via["install_path"],
+            file_count=0,
+            status="active",
+            attribution=source or f"manual add（{tport}）",
+            dedup_note=f"add 命令注册（{tport}，scope={scope}）",
+            installed_at=_now_iso(),
+        )
+        registry.record_session(
+            conn,
+            session_id=f"add-{name}-{_now_iso()}",
+            source_video="",
+            authorization_choice="add --approve",
+            skills_before=before,
+            skills_added=1,
+            skills_merged=0,
+            skills_after=before + 1,
+            installed_at=_now_iso(),
+            notes=f"add 注册 MCP {name}（{tport}，scope={scope}）",
+        )
+    finally:
+        conn.close()
+
+    return {
+        "name": name,
+        "form": "MCP",
+        "transport": tport,
+        "scope": scope,
+        "approve": True,
+        "registered_via": via["registered_via"],
+        "path": via["install_path"],
+        "server": server_preview,
+        "missing_env": missing_env,
+        "dirs_filled": sub_dirs,
+    }
+
+
 def format_plan_text(r: dict) -> str:
     """把 install 报告格式化成人读多行文本（dry-run 与真装通用，形态分发文案）。"""
     forms = {it.get("form", "Skill") for it in (r.get("items_detail") or [])}
