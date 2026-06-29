@@ -199,11 +199,15 @@ def _make_half_half_png(w: int = 120, h: int = 120) -> bytes:
 
 
 def _resolve_source(cfg: Config, s: str) -> Path:
-    """BV号/URL → data/sources/<bvid>；否则当成源目录路径。"""
-    import skillbrew.ingest as _ingest
+    """BV号/URL → data/sources/<bvid>；否则当成源目录路径。
 
-    if _ingest.BVID_RE.search(s):
-        return cfg.data_dir / "sources" / _ingest.parse_bvid(s)
+    P3-1：BVID 解析改为从 skillbrew.sources 导入（原先从 skillbrew.ingest）。
+    其他视频源（douyin/youtube）需要多源化时直接用 skillbrew.sources 的 resolve_subdir。
+    """
+    from skillbrew.sources import BVID_RE, parse_bvid
+
+    if BVID_RE.search(s):
+        return cfg.data_dir / "sources" / parse_bvid(s)
     return Path(s)
 
 
