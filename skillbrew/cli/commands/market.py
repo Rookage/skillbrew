@@ -11,16 +11,18 @@ from skillbrew import marketplace
 
 
 def cmd_search(args: argparse.Namespace) -> int:
-    """`skillbrew search <关键词>` —— 在 Smithery 搜 MCP。"""
+    """`skillbrew search <关键词>` —— 在 MCP 市场搜 MCP。"""
+    market = getattr(args, "market", None)
     try:
-        entries = marketplace.search(args.query, limit=args.limit, page=args.page)
+        entries = marketplace.search(args.query, limit=args.limit, page=args.page, market=market)
     except marketplace.MarketplaceError as err:
         print(f"[FAIL] 搜索失败：{err}")
         return 2
     if not entries:
-        print(f"没搜到匹配「{args.query}」的 MCP，换个关键词试试。")
+        print(f"没搜到匹配「{args.query}」的 MCP，换个关键词或换 --market 试试。")
         return 0
-    print(f"在 Smithery 搜「{args.query}」，返回 {len(entries)} 条（第 {args.page} 页）：")
+    mkt_label = market or "smithery"
+    print(f"在 {mkt_label} 搜「{args.query}」，返回 {len(entries)} 条（第 {args.page} 页）：")
     print()
     for i, entry in enumerate(entries, 1):
         v = "✓" if entry.verified else " "
@@ -33,17 +35,19 @@ def cmd_search(args: argparse.Namespace) -> int:
         if entry.homepage:
             print(f"    {entry.homepage}")
         print()
-    print("提示：用 `skillbrew info <qualifiedName>` 看详情。")
+    print(f"提示：用 `skillbrew info <qualifiedName> --market {mkt_label}` 看详情。")
     return 0
 
 
 def cmd_info(args: argparse.Namespace) -> int:
     """`skillbrew info <qualifiedName>` —— 看某个 MCP 在市场里的详情。"""
+    market = getattr(args, "market", None)
     try:
-        d = marketplace.info(args.name)
+        d = marketplace.info(args.name, market=market)
     except marketplace.MarketplaceError as err:
         print(f"[FAIL] 查详情失败：{err}")
         return 2
+    mkt_label = market or "smithery"
     print(f"{d.display_name}  ({d.qualified_name})")
     print("=" * 60)
     print(d.description)
@@ -57,5 +61,5 @@ def cmd_info(args: argparse.Namespace) -> int:
     if d.homepage:
         print(f"主页：{d.homepage}")
     print()
-    print(f"提示：用 `skillbrew add {d.qualified_name} --from smithery` 安装。")
+    print(f"提示：用 `skillbrew add {d.qualified_name} --from {mkt_label}` 安装。")
     return 0

@@ -37,7 +37,7 @@ def _ns(**kw) -> argparse.Namespace:
         header=None,
         transport=None,
         scope="user",
-        from_smithery=None,
+        from_market=None,
         approve=False,
     )
     base.update(kw)
@@ -271,8 +271,8 @@ def test_cmd_add_from_smithery_remote(capsys, monkeypatch):
         tool_count=3, prompt_count=0, resource_count=0,
         homepage="https://smithery.test/github", needs_config=False,
     )
-    monkeypatch.setattr(marketplace, "info", lambda name: detail)
-    rc = cmd_add(_ns(name="github", from_smithery="smithery"))
+    monkeypatch.setattr(marketplace, "info", lambda name, market=None: detail)
+    rc = cmd_add(_ns(name="github", from_market="smithery"))
     assert rc == 0
     out = capsys.readouterr().out
     assert "http" in out
@@ -288,8 +288,8 @@ def test_cmd_add_from_smithery_local_stdio(capsys, monkeypatch):
         tool_count=1, prompt_count=0, resource_count=0,
         homepage="https://example.test/fs", needs_config=True,
     )
-    monkeypatch.setattr(marketplace, "info", lambda name: detail)
-    rc = cmd_add(_ns(name="fs", from_smithery="smithery"))
+    monkeypatch.setattr(marketplace, "info", lambda name, market=None: detail)
+    rc = cmd_add(_ns(name="fs", from_market="smithery"))
     assert rc == 0
     out = capsys.readouterr().out
     assert "本地 stdio" in out
@@ -299,10 +299,10 @@ def test_cmd_add_from_smithery_local_stdio(capsys, monkeypatch):
 
 def test_cmd_add_from_smithery_market_error(capsys, monkeypatch):
     """市场拉详情失败 → 报错码 2，不崩。"""
-    def _boom(name):
+    def _boom(name, market=None):
         raise marketplace.MarketplaceError("network down")
     monkeypatch.setattr(marketplace, "info", _boom)
-    rc = cmd_add(_ns(name="x", from_smithery="smithery"))
+    rc = cmd_add(_ns(name="x", from_market="smithery"))
     assert rc == 2
     assert "[FAIL]" in capsys.readouterr().out
 

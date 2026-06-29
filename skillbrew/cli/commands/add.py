@@ -42,16 +42,17 @@ def cmd_add(args: argparse.Namespace) -> int:
     scope = (args.scope or "user").strip().lower()
     source = ""
     homepage_hint = ""
+    from_market = getattr(args, "from_market", None)
 
     # ---- 1. 从市场拉：解析远程 URL（远程托管可直接装；本地 stdio 提示手动）----
-    if args.from_smithery:
+    if from_market:
         try:
-            detail = marketplace.info(name)
+            detail = marketplace.info(name, market=from_market)
         except marketplace.MarketplaceError as err:
             print(f"[FAIL] 从市场拉详情失败：{err}")
             return 2
         name = detail.qualified_name or name
-        source = f"smithery:{detail.qualified_name}"
+        source = f"{from_market}:{detail.qualified_name}"
         homepage_hint = detail.homepage
         if detail.remote and detail.deployment_url:
             transport = transport or "http"
@@ -64,7 +65,7 @@ def cmd_add(args: argparse.Namespace) -> int:
             print("市场详情不含安装命令，需手动指定装法，例如：")
             print(
                 f"  skillbrew add {detail.qualified_name} --command npx "
-                f"--arg -y --arg <npm包名> [--env <KEY>]"
+                f"--arg=-y --arg <npm包名> [--env <KEY>]"
             )
             if detail.needs_config and detail.homepage:
                 print(f"该服务器还需配置参数，详见：{detail.homepage}")
@@ -76,10 +77,10 @@ def cmd_add(args: argparse.Namespace) -> int:
     elif command:
         transport = transport or "stdio"
     else:
-        print("[FAIL] 不知道怎么注册。给 --url（远程）、--command（本地）或 --from smithery（市场）。")
+        print("[FAIL] 不知道怎么注册。给 --url（远程）、--command（本地）或 --from（市场）。")
         print("  远程：skillbrew add NAME --url https://... [-H 'X-Token: abc']")
         print("  本地：skillbrew add NAME --command npx --arg=-y --arg <包名> [--env KEY]")
-        print("  市场：skillbrew add NAME --from smithery")
+        print("  市场：skillbrew add NAME --from smithery   或   --from registry")
         return 2
 
     # ---- 3. headers（仅 http/sse 有意义）----
