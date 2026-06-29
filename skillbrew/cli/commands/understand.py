@@ -8,7 +8,13 @@ import sys
 
 from skillbrew.config import load_config
 
-from ..utils import _format_missing_hint, _require_binaries, _resolve_source
+from ..utils import (
+    _format_missing_hint,
+    _print_progress,
+    _require_binaries,
+    _resolve_source,
+    _spinner,
+)
 
 
 def cmd_understand(args: argparse.Namespace) -> int:
@@ -36,19 +42,19 @@ def cmd_understand(args: argparse.Namespace) -> int:
     elif not args.force and (src / "transcript.json").exists():
         print("[字幕] 已存在，跳过")
     else:
-        print("[字幕] ASR 转写 ...")
-        t = understand.transcribe(src / "audio.mp3", src)
+        with _spinner("[字幕] ASR 转写（首次加载模型~160s）"):
+            t = understand.transcribe(src / "audio.mp3", src)
         print(f"   -> {len(t['segments'])} 段, {len(t['text'])} 字")
 
     if not args.force and (src / "keyframes_align.json").exists():
         print("[关键帧] 已存在，跳过")
     else:
-        print(f"[关键帧] 采样 {args.max_frames} 帧 ...")
-        kfs = understand.select_keyframes(src / "video.mp4", src, max_frames=args.max_frames)
-        align = understand.align_keyframes(src / "transcript.json", kfs)
-        (src / "keyframes_align.json").write_text(
-            json.dumps(align, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        with _spinner(f"[关键帧] 采样 {args.max_frames} 帧"):
+            kfs = understand.select_keyframes(src / "video.mp4", src, max_frames=args.max_frames)
+            align = understand.align_keyframes(src / "transcript.json", kfs)
+            (src / "keyframes_align.json").write_text(
+                json.dumps(align, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
         print(f"   -> {len(kfs)} 张")
 
     if args.skip_vision:
@@ -56,8 +62,17 @@ def cmd_understand(args: argparse.Namespace) -> int:
     elif not args.force and (src / "keyframe_visions.json").exists():
         print("[视觉] 已存在，跳过")
     else:
-        print(f"[视觉] 看关键帧（并发 {args.max_workers}）...")
-        res = understand.describe_keyframes(cfg, src, max_workers=args.max_workers)
+        print(f"[视觉] 看关键帧（并发 {args.max_workers}，Agnes ~5min/张，请耐心）...")
+
+        def _on_vprog(r: dict, done: int, total: int) -> None:
+            tag = "ok" if r.get("ok") else "fail"
+            elapsed = r.get("elapsed", 0)
+            _print_progress(done, total, label=f"{r.get('file', '')} {tag} {elapsed}s")
+
+        with _spinner(f"[视觉] 看关键帧（并发 {args.max_workers}）"):
+            res = understand.describe_keyframes(
+                cfg, src, max_workers=args.max_workers, on_progress=_on_vprog
+            )
         ok = sum(1 for r in res if r["ok"])
         print(f"   -> {ok}/{len(res)} 张成功")
 
