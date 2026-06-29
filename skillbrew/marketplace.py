@@ -116,7 +116,7 @@ class ServerDetail:
         )
 
 
-def search(query: str, limit: int = DEFAULT_LIMIT, page: int = 1) -> list[MarketEntry]:
+def search_smithery(query: str, limit: int = DEFAULT_LIMIT, page: int = 1) -> list[MarketEntry]:
     """在 Smithery 搜 MCP，返回条目列表（默认 10 条/页）。"""
     qs = urllib.parse.urlencode({"q": query, "page": page, "pageSize": limit})
     data = _get_json(f"{SMITHERY_BASE}/servers?{qs}")
@@ -126,8 +126,8 @@ def search(query: str, limit: int = DEFAULT_LIMIT, page: int = 1) -> list[Market
     return [MarketEntry.from_smithery(s) for s in servers if isinstance(s, dict)]
 
 
-def info(qualified_name: str) -> ServerDetail:
-    """查单个 MCP 详情（按 qualifiedName，如 "github"）。"""
+def info_smithery(qualified_name: str) -> ServerDetail:
+    """查单个 MCP 详情（按 qualifiedName，如 "github"）—— Smithery 实现。"""
     name = (qualified_name or "").strip().lstrip("@")
     if not name:
         raise MarketplaceError("info 需要一个 MCP 名（如 github）")
@@ -136,3 +136,21 @@ def info(qualified_name: str) -> ServerDetail:
     if not isinstance(data, dict):
         raise MarketplaceError("市场详情返回结构异常，可能 API 变更")
     return ServerDetail.from_smithery(data)
+
+
+def search(query: str, limit: int = DEFAULT_LIMIT, page: int = 1, market: str | None = None) -> list[MarketEntry]:
+    """搜 MCP（多市场分发）。不指定 market 走默认（smithery）。
+
+    Phase 3 起支持多市场：通过 marketplaces 适配器层按名分发到 smithery / registry。
+    老 CLI 不传 market 时行为与 Phase 1/2 完全一致（仍走 smithery）。
+    """
+    from skillbrew.marketplaces import get_adapter
+
+    return get_adapter(market).search(query, limit=limit, page=page)
+
+
+def info(qualified_name: str, market: str | None = None) -> ServerDetail:
+    """查单个 MCP 详情（多市场分发）。不指定 market 走默认（smithery）。"""
+    from skillbrew.marketplaces import get_adapter
+
+    return get_adapter(market).info(qualified_name)
