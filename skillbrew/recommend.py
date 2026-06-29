@@ -39,6 +39,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ._utils import _now_iso
+
 # ---- 常量 ----
 
 # 判断步三模式（D21）
@@ -61,12 +63,6 @@ SV_ALL_SKIP = "不值得装"  # 所有 new 都不值得
 SV_SOURCE_SKIP = "整源跳过"  # 源级信号否决（如配置商店非技能集，davila7 案例）
 SV_NOTHING_NEW = "无需新装"  # 没有 new 候选（全 skip/merge）
 SOURCE_VERDICTS = (SV_ALL_WORTH, SV_PICK, SV_ALL_SKIP, SV_SOURCE_SKIP, SV_NOTHING_NEW)
-
-
-def _now_iso() -> str:
-    from datetime import datetime
-
-    return datetime.now().isoformat(timespec="seconds")
 
 
 # ---- 积木 A：纯核心（数据模型 + 汇总 + 装配）------------------------------------
