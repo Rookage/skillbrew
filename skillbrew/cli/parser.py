@@ -11,12 +11,14 @@ from .commands import (
     cmd_config,
     cmd_dedup,
     cmd_doctor,
+    cmd_info,
     cmd_ingest,
     cmd_install,
     cmd_plan,
     cmd_recommend,
     cmd_record,
     cmd_run,
+    cmd_search,
     cmd_understand,
     cmd_verify,
 )
@@ -187,6 +189,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="追加扫描目录（默认读 dedup.json 的 baseline.skill_dirs，与去重同口径）",
     )
     p_rec.set_defaults(func=cmd_record)
+
+    p_search = sub.add_parser(
+        "search", help="在 MCP 市场（Smithery）搜 MCP 服务器（只读，不安装）"
+    )
+    p_search.add_argument("query", help="搜索关键词")
+    p_search.add_argument(
+        "--limit", type=int, default=10, metavar="N", help="每页条数（默认 10）"
+    )
+    p_search.add_argument("--page", type=int, default=1, metavar="N", help="页码（默认第 1 页）")
+    p_search.set_defaults(func=cmd_search)
+
+    p_info = sub.add_parser("info", help="看某个 MCP 在市场里的详情（只读，不安装）")
+    p_info.add_argument("name", help="MCP 的 qualifiedName（如 github）")
+    p_info.set_defaults(func=cmd_info)
 
     return parser
 
