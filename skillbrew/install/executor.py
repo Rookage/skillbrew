@@ -562,6 +562,7 @@ def install(
     refresh_cache: bool = False,
     chat_fn=None,
     prompt_fn=None,
+    on_resolve_progress=None,
 ) -> dict:
     """对一个源目录跑安装：读 install_list.json + dedup.json → 挑 new 按形态分发 → 登记台账。
 
@@ -569,6 +570,10 @@ def install(
     approve=True = 真装 + upsert 台账 + 记会话。
     默认纯查表（GitHub raw + 标准库 + claude CLI，不调 LLM）；ai_infer 开时才对 unresolved
     的 MCP 跑「AI 推断装法 → 试跑验证 → 缺项补全」（D23）。
+
+    on_progress(stage_item_dict, done, total)：实际安装每个能力前回调一次（既有行为）。
+    on_resolve_progress(name, done, total, ok, reason)：AI 推断每个 unresolved 项回调一次，
+        给 CLI 层做 spinner/进度（P1-3）。失败不影响主流程（defensive except）。
     """
     source_dir = Path(source_dir)
     il_path = source_dir / "install_list.json"
@@ -624,10 +629,15 @@ def install(
     for name in by_name:
         resolve_meta[name] = {"provenance": "catalog", "trace": [], "missing": []}
     if ai_infer and unresolved:
+        _r_total = len(unresolved)
+        _r_done = 0
         for u in list(unresolved):
             name = u.get("name") or ""
             if not name:
+                _r_done += 1
                 continue
+            _rr_ok = False
+            _rr_reason = ""
             try:
                 rr = installer.resolve_install_spec(
                     name,
@@ -644,6 +654,12 @@ def install(
                 msg = f"[{name}] resolve 异常（留 unresolved）：{e}"
                 resolve_traces.append(msg)
                 warnings.warn(msg, stacklevel=2)
+                _r_done += 1
+                if on_resolve_progress is not None:
+                    try:
+                        on_resolve_progress(name, _r_done, _r_total, False, str(e)[:120])
+                    except Exception:  # noqa: BLE001
+                        pass
                 continue
             for t in rr.trace or []:
                 resolve_traces.append(f"[{name}] {t}")
@@ -663,12 +679,21 @@ def install(
                 resolve_traces.append(
                     f"[{name}] resolve 成功：provenance={rr.provenance}，已纳入安装计划"
                 )
+                _rr_ok = True
+                _rr_reason = f"ok ({rr.provenance})"
             else:
                 if rr.reason:
                     resolve_traces.append(f"[{name}] resolve 未通过：{rr.reason}")
                     u["reason"] = rr.reason
+                    _rr_reason = rr.reason[:120]
                 if rr.missing:
                     u["missing"] = list(rr.missing)
+            _r_done += 1
+            if on_resolve_progress is not None:
+                try:
+                    on_resolve_progress(name, _r_done, _r_total, _rr_ok, _rr_reason)
+                except Exception:  # noqa: BLE001
+                    pass
 
     for u in unresolved:
         name = u.get("name") or ""
