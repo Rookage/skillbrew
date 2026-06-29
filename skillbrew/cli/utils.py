@@ -9,7 +9,6 @@ import shutil
 import struct
 import sys
 import threading
-import time
 import zlib
 from contextlib import contextmanager
 from pathlib import Path
