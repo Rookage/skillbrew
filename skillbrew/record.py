@@ -21,6 +21,7 @@ personal（作者个人）类——代码去重只判"是否重复"（名字/描
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from datetime import datetime
@@ -29,6 +30,8 @@ from pathlib import Path
 from . import config, registry
 from . import dedup as dedup_mod  # 复用 scan_local_skills / _key 做落盘核对
 from ._utils import _now_iso
+
+logger = logging.getLogger(__name__)
 
 
 def _today() -> str:
@@ -1225,9 +1228,9 @@ def _update_claude_md(claude_md: Path, index_path: Path) -> None:
             )
         claude_md.write_text(new_text, encoding="utf-8")
     except OSError as e:
-        print(
-            f"[record] 提示：写 CLAUDE.md 失败（{e}），已装索引仍写入 {index_path}，"
-            f"可手动在 CLAUDE.md 加一句『参考 {index_path}』。"
+        logger.warning(
+            "[record] 写 CLAUDE.md 失败（%s），已装索引仍写入 %s，可手动加一句『参考 %s』。",
+            e, index_path, index_path,
         )
 
 
@@ -1265,7 +1268,7 @@ def _write_installed_index(db_path, on_progress) -> dict | None:
         }
     except Exception as e:
         # 索引导出是锦上添花，任何异常都不应该打断 record 主流程
-        print(f"[record] 提示：生成已装索引失败（{e}），不影响 RECORD/DASHBOARD。")
+        logger.warning("[record] 生成已装索引失败（%s），不影响 RECORD/DASHBOARD。", e)
         return None
 
 
