@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import traceback
 
 from skillbrew.config import load_config
 
 from ..utils import _resolve_source
+
+logger = logging.getLogger(__name__)
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
@@ -28,14 +31,14 @@ def cmd_verify(args: argparse.Namespace) -> int:
         head = f"{cat}/" if cat else ""
         if form == "MCP":
             mcp = s.get("mcp") or {}
-            print(
-                f"   [{i + 1}/{n}] 解析 MCP {s['name']}（{mcp.get('transport', 'stdio')}）...",
-                flush=True,
+            logger.info(
+                "[%d/%d] 解析 MCP %s（%s）...",
+                i + 1, n, s["name"], mcp.get("transport", "stdio"),
             )
         elif form == "repo":
-            print(f"   [{i + 1}/{n}] 探仓库 {s.get('repo', '') or s['name']} ...", flush=True)
+            logger.info("[%d/%d] 探仓库 %s ...", i + 1, n, s.get("repo", "") or s["name"])
         else:
-            print(f"   [{i + 1}/{n}] 取 {head}{s['name']} SKILL.md ...", flush=True)
+            logger.info("[%d/%d] 取 %s%s SKILL.md ...", i + 1, n, head, s["name"])
 
     try:
         summary = verify_mod.verify(src, repo_override=args.repo, on_progress=on_progress)

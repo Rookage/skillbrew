@@ -14,6 +14,7 @@ from __future__ import annotations
 import sys
 import traceback
 
+from skillbrew._logging import _setup_logging
 from skillbrew.config import ensure_utf8_stdout
 from skillbrew.errors import SkillbrewError
 
@@ -39,6 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     # 入口统一 UTF-8：Windows 默认 GBK 控制台 print 含零宽字符会崩
     # 在最后一刻（issue #5）。统一 UTF-8+errors=replace，
     # 所有 print 都不会因编码炸。库式调用不受影响。
+    _setup_logging()
     ensure_utf8_stdout()
     try:
         args = parse_args(argv)
