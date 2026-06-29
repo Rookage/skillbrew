@@ -8,7 +8,7 @@ import traceback
 from skillbrew import llm, notify
 from skillbrew.config import load_config
 
-from ..utils import _resolve_source
+from ..utils import _print_progress, _resolve_source, _spinner
 
 
 def cmd_install(args: argparse.Namespace) -> int:
@@ -51,7 +51,19 @@ def cmd_install(args: argparse.Namespace) -> int:
     # 默认关 → install() 纯查表，零行为改变（回归安全）。prompt_fn=None：交互终端走 input()，无终端写进报告。
     chat_fn = (lambda p: llm.chat_text(cfg, p)) if args.ai_infer else None
 
+    # P1-3：--ai-infer 时 unresolved 推断每条都要等 LLM（慢），给 spinner + 每条进度
+    _resolve_spinner_cm = None
+    _on_resolve_progress = None
+    if args.ai_infer:
+        _resolve_spinner_cm = _spinner("[AI 推断] 解析 unresolved MCP 装法（LLM）")
+
+        def _on_resolve_progress(name: str, done: int, total: int, ok: bool, reason: str) -> None:
+            tag = "ok" if ok else "fail"
+            _print_progress(done, total, label=f"{name} {tag}")
+
     try:
+        if _resolve_spinner_cm is not None:
+            _resolve_spinner_cm.__enter__()
         r = install_mod.install(
             src,
             target_dir=args.target_dir,
@@ -63,8 +75,15 @@ def cmd_install(args: argparse.Namespace) -> int:
             refresh_cache=args.refresh_cache,
             chat_fn=chat_fn,
             prompt_fn=None,
+            on_resolve_progress=_on_resolve_progress,
         )
+        if _resolve_spinner_cm is not None:
+            _resolve_spinner_cm.__exit__(None, None, None)
+            _resolve_spinner_cm = None
     except Exception as e:  # noqa: BLE001
+        if _resolve_spinner_cm is not None:
+            _resolve_spinner_cm.__exit__(type(e), e, e.__traceback__)
+            _resolve_spinner_cm = None
         traceback.print_exc()
         print(f"[FAIL] 安装失败：{e}")
         return 2

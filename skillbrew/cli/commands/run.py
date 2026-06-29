@@ -7,6 +7,8 @@ import json
 
 from skillbrew.config import load_config
 
+from ..utils import _print_progress, _spinner
+
 
 def cmd_run(args: argparse.Namespace) -> int:
     """一键：采集 → 理解(字幕+关键帧+视觉) → 消化 → 草稿计划，到此为止不安装。"""
@@ -23,8 +25,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not args.force and have_media:
         print("[①采集] 已存在，跳过")
     else:
-        print("[①采集] 下载 ...")
-        r = ingest.fetch_bilibili(args.source, src_dir, qn=args.qn)
+        with _spinner("[①采集] 下载视频+音频"):
+            r = ingest.fetch_bilibili(args.source, src_dir, qn=args.qn)
         print(f"   -> {r.title}（时长 {r.duration}s）")
 
     # ② 字幕 ASR
@@ -42,22 +44,22 @@ def cmd_run(args: argparse.Namespace) -> int:
     elif not args.force and (src_dir / "transcript.json").exists():
         print("[②字幕] 已存在，跳过")
     else:
-        print("[②字幕] ASR 转写（首次加载模型~160s）...")
-        t = understand.transcribe(src_dir / "audio.mp3", src_dir)
+        with _spinner("[②字幕] ASR 转写（首次加载模型~160s）"):
+            t = understand.transcribe(src_dir / "audio.mp3", src_dir)
         print(f"   -> {len(t['segments'])} 段, {len(t['text'])} 字")
 
     # ③ 关键帧
     if not args.force and (src_dir / "keyframes_align.json").exists():
         print("[③关键帧] 已存在，跳过")
     else:
-        print(f"[③关键帧] farthest-point 采样 {args.max_frames} 帧 ...")
-        kfs = understand.select_keyframes(
-            src_dir / "video.mp4", src_dir, max_frames=args.max_frames
-        )
-        align = understand.align_keyframes(src_dir / "transcript.json", kfs)
-        (src_dir / "keyframes_align.json").write_text(
-            json.dumps(align, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        with _spinner(f"[③关键帧] farthest-point 采样 {args.max_frames} 帧"):
+            kfs = understand.select_keyframes(
+                src_dir / "video.mp4", src_dir, max_frames=args.max_frames
+            )
+            align = understand.align_keyframes(src_dir / "transcript.json", kfs)
+            (src_dir / "keyframes_align.json").write_text(
+                json.dumps(align, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
         print(f"   -> {len(kfs)} 张")
 
     # ④ 视觉看图
@@ -66,8 +68,17 @@ def cmd_run(args: argparse.Namespace) -> int:
     elif not args.force and (src_dir / "keyframe_visions.json").exists():
         print("[④视觉] 已存在，跳过")
     else:
-        print(f"[④视觉] 看关键帧（Agnes ~5min/张，并发 {args.max_workers}）...")
-        res = understand.describe_keyframes(cfg, src_dir, max_workers=args.max_workers)
+        print(f"[④视觉] 看关键帧（并发 {args.max_workers}，Agnes ~5min/张，请耐心）...")
+
+        def _on_vprog(r: dict, done: int, total: int) -> None:
+            tag = "ok" if r.get("ok") else "fail"
+            elapsed = r.get("elapsed", 0)
+            _print_progress(done, total, label=f"{r.get('file', '')} {tag} {elapsed}s")
+
+        with _spinner(f"[④视觉] 看关键帧（并发 {args.max_workers}）"):
+            res = understand.describe_keyframes(
+                cfg, src_dir, max_workers=args.max_workers, on_progress=_on_vprog
+            )
         ok = sum(1 for r in res if r["ok"])
         print(f"   -> {ok}/{len(res)} 张成功")
         if ok < len(res):
@@ -77,8 +88,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not args.force and (src_dir / "plan.json").exists():
         print("[⑤消化] 计划已存在，跳过（--force 可重跑）")
     else:
-        print("[⑤消化] DeepSeek 融合字幕 + 视觉 → 计划 ...")
-        plan.digest(src_dir)
+        with _spinner("[⑤消化] DeepSeek 融合字幕+视觉→计划"):
+            plan.digest(src_dir)
 
     # 摘要
     p = json.loads((src_dir / "plan.json").read_text(encoding="utf-8"))
