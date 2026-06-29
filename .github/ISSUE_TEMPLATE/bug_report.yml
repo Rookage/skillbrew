@@ -1,0 +1,53 @@
+name: Bug report
+description: Report a reproducible SkillBREW problem.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. A small, reproducible case is the fastest way to get it fixed.
+        感谢反馈。最小复现步骤会让问题更快被定位。
+  - type: input
+    id: version
+    attributes:
+      label: SkillBREW version / commit
+      description: Paste the version, commit SHA, or branch you tested.
+      placeholder: "main @ abc1234"
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps / 复现步骤
+      description: What did you run?
+      placeholder: |
+        1. pip install -e .
+        2. skillbrew run ...
+        3. skillbrew install ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior / 预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior / 实际行为
+      description: Include the error text or screenshot if useful.
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime / 运行时
+      options:
+        - Claude Code
+        - Codex
+        - Other / unsure
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment / 环境
+      placeholder: "OS, Python version, shell, ffmpeg availability, etc."

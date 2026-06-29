@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest a capability, source adapter, runtime improvement, or workflow.
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Good feature requests describe the workflow pain, not only the desired button.
+        好的功能建议最好说明工作流痛点，而不只是说“加一个按钮”。
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / 痛点
+      description: What becomes hard, repetitive, risky, or unclear today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal / 建议方案
+      description: What should SkillBREW do differently?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area / 影响范围
+      options:
+        - Source adapter / 输入源
+        - Pipeline artifact / 中间产物
+        - Deduplication / 去重
+        - Install resolver / 装法推断
+        - Runtime support / 运行时支持
+        - Documentation / 文档
+        - Other / unsure
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives / 其他方案
+      description: Any workaround or simpler version worth considering?

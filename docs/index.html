@@ -3,213 +3,619 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="SkillBREW 技能酿造局：把散落在视频、网页、README 和推荐清单里的 Agent 能力，酿成可验证、可安装、可追踪的本地能力库。 Turn scattered agent tips into a verified local capability cellar.">
+  <meta name="keywords" content="SkillBREW, 技能酿造局, MCP, Model Context Protocol, Claude Code, Codex, AI agent, agent skills, developer tools, local-first">
+  <meta name="theme-color" content="#17140f">
+  <link rel="canonical" href="https://rookage.github.io/skillbrew/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="SkillBREW">
+  <meta property="og:title" content="SkillBREW — 技能酿造局">
+  <meta property="og:description" content="Turn scattered agent tips into a verified, installable, trackable local capability cellar for Claude Code, Codex, and MCP workflows.">
+  <meta property="og:url" content="https://rookage.github.io/skillbrew/">
+  <meta property="og:image" content="https://rookage.github.io/skillbrew/assets/skillbrew-hero.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="SkillBREW — 技能酿造局">
+  <meta name="twitter:description" content="A local-first capability manager for Claude Code, Codex, and MCP workflows.">
+  <meta name="twitter:image" content="https://rookage.github.io/skillbrew/assets/skillbrew-hero.png">
   <title>SkillBREW — 技能酿造局</title>
   <style>
     :root {
-      --bg: #0f1115;
-      --card: #181b21;
-      --text: #e6e9ef;
-      --muted: #9aa3b2;
-      --accent: #f2a93b;
-      --accent-2: #4cc38a;
-      --link: #6cb4ff;
-      --border: #2a2e36;
+      --ink: #17140f;
+      --paper: #f7f1e6;
+      --paper-2: #fffaf0;
+      --charcoal: #111417;
+      --muted: #6f6a60;
+      --line: #d8cdb9;
+      --amber: #d9861f;
+      --amber-dark: #7a4613;
+      --green: #2f8c62;
+      --teal: #247b83;
+      --red: #b64b3d;
+      --white: #fffdf8;
     }
-    * { box-sizing: border-box; }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      line-height: 1.7;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--paper);
+      color: var(--ink);
+      line-height: 1.65;
     }
-    a { color: var(--link); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
-    header {
-      padding: 72px 0 48px;
-      text-align: center;
-      border-bottom: 1px solid var(--border);
-    }
-    .logo {
-      width: 80px; height: 80px;
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      border-radius: 20px;
-      margin: 0 auto 24px;
-      display: grid; place-items: center;
-      font-size: 36px; font-weight: 700; color: #0f1115;
-    }
-    h1 { font-size: 2.6rem; margin: 0 0 16px; letter-spacing: -0.5px; }
-    .tagline { color: var(--muted); font-size: 1.15rem; max-width: 680px; margin: 0 auto; }
-    .cta { margin-top: 32px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-    .btn {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 12px 24px; border-radius: 10px; font-weight: 600;
-      border: 1px solid var(--border);
-      transition: transform .1s, border-color .2s;
-    }
-    .btn-primary { background: var(--accent); color: #0f1115; border-color: var(--accent); }
-    .btn-secondary { background: var(--card); color: var(--text); }
-    .btn:hover { transform: translateY(-1px); text-decoration: none; }
 
-    section { padding: 56px 0; border-bottom: 1px solid var(--border); }
-    h2 { font-size: 1.8rem; margin: 0 0 24px; }
-    h3 { font-size: 1.25rem; margin: 0 0 12px; }
-    p { margin: 0 0 16px; color: var(--muted); }
-
-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
-    .card {
-      background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px;
-      transition: border-color .2s;
+    a {
+      color: inherit;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 4px;
     }
-    .card:hover { border-color: var(--accent); }
-    .card .icon { font-size: 1.8rem; margin-bottom: 12px; }
-    .card p { margin: 0; }
+
+    .wrap {
+      width: min(1120px, calc(100% - 40px));
+      margin: 0 auto;
+    }
+
+    .hero {
+      min-height: 88vh;
+      display: grid;
+      align-items: end;
+      color: var(--white);
+      background:
+        linear-gradient(90deg, rgba(17, 20, 23, .92) 0%, rgba(17, 20, 23, .70) 42%, rgba(17, 20, 23, .22) 100%),
+        url("./assets/skillbrew-hero.png") center / cover no-repeat;
+      border-bottom: 1px solid rgba(255, 255, 255, .18);
+    }
+
+    .nav {
+      position: absolute;
+      inset: 0 0 auto;
+      padding: 22px 0;
+    }
+
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+    }
+
+    .mark {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border: 1px solid rgba(255, 255, 255, .32);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .10);
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 18px;
+      color: rgba(255, 255, 255, .80);
+      font-size: 14px;
+    }
+
+    .nav-links a {
+      text-decoration: none;
+    }
+
+    .hero-copy {
+      width: min(760px, 100%);
+      padding: 160px 0 72px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 22px;
+      color: #f3c27a;
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(44px, 8vw, 92px);
+      line-height: .98;
+      letter-spacing: 0;
+    }
+
+    .hero-copy p {
+      max-width: 660px;
+      margin: 28px 0 0;
+      color: rgba(255, 255, 255, .86);
+      font-size: clamp(18px, 2.2vw, 24px);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 34px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      min-height: 44px;
+      padding: 0 18px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, .28);
+      background: rgba(255, 255, 255, .10);
+      color: var(--white);
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .button.primary {
+      background: var(--amber);
+      border-color: var(--amber);
+      color: #1c1309;
+    }
+
+    section {
+      padding: 72px 0;
+    }
+
+    .band-dark {
+      background: var(--charcoal);
+      color: var(--white);
+    }
+
+    .band-light {
+      background: var(--paper-2);
+      border-block: 1px solid var(--line);
+    }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, .9fr) minmax(280px, 1.1fr);
+      gap: 48px;
+      align-items: start;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(30px, 4vw, 48px);
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      margin: 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .band-dark .lead,
+    .band-dark .muted {
+      color: rgba(255, 255, 255, .70);
+    }
+
+    .pain-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      margin-top: 40px;
+    }
+
+    .pain {
+      min-height: 150px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .50);
+      font-weight: 700;
+    }
+
+    .pain span {
+      display: block;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 500;
+    }
 
     .pipeline {
-      display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 24px 0;
+      display: grid;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 42px;
     }
-    .pipe-step {
-      background: var(--card); border: 1px solid var(--border); border-radius: 999px;
-      padding: 8px 18px; font-size: .95rem;
-    }
-    .pipe-arrow { color: var(--muted); align-self: center; }
 
+    .step {
+      padding: 16px 10px;
+      border: 1px solid rgba(255, 255, 255, .16);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .07);
+      text-align: center;
+    }
+
+    .step b {
+      display: block;
+      color: #f5bf67;
+      font-size: 13px;
+    }
+
+    .step span {
+      display: block;
+      margin-top: 6px;
+      font-weight: 800;
+    }
+
+    .features {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-top: 42px;
+    }
+
+    .feature {
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--white);
+    }
+
+    .feature h3 {
+      margin: 0 0 10px;
+      font-size: 19px;
+    }
+
+    .feature p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .terminal {
+      margin-top: 34px;
+      padding: 22px;
+      overflow-x: auto;
+      border-radius: 8px;
+      background: #12100d;
+      color: #f5ead7;
+      border: 1px solid #3d3428;
+      font-size: 14px;
+    }
+
+    code,
     pre {
-      background: #111318; border: 1px solid var(--border); border-radius: 12px;
-      padding: 16px; overflow-x: auto; font-size: .9rem; line-height: 1.6;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     }
-    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace; }
 
-    footer { padding: 40px 0; text-align: center; color: var(--muted); font-size: .9rem; }
-    footer a { margin: 0 10px; }
+    .proof {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 42px;
+    }
+
+    .proof-block {
+      border: 1px solid rgba(255, 255, 255, .16);
+      border-radius: 8px;
+      padding: 24px;
+      background: rgba(255, 255, 255, .06);
+    }
+
+    .proof-block h3 {
+      margin: 0 0 12px;
+      color: #f5bf67;
+    }
+
+    .proof-block ul {
+      margin: 0;
+      padding-left: 20px;
+      color: rgba(255, 255, 255, .76);
+    }
+
+    .runtime {
+      width: 100%;
+      margin-top: 34px;
+      border-collapse: collapse;
+      background: var(--white);
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+    }
+
+    .runtime th,
+    .runtime td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .runtime th {
+      background: #eadfc9;
+    }
+
+    footer {
+      padding: 40px 0;
+      background: var(--charcoal);
+      color: rgba(255, 255, 255, .68);
+    }
+
+    footer .wrap {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    @media (max-width: 900px) {
+      .section-head,
+      .proof {
+        grid-template-columns: 1fr;
+      }
+
+      .pain-grid,
+      .features {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .pipeline {
+        grid-template-columns: repeat(4, 1fr);
+      }
+    }
+
+    @media (max-width: 620px) {
+      .wrap {
+        width: min(100% - 28px, 1120px);
+      }
+
+      .hero {
+        min-height: 82vh;
+        background:
+          linear-gradient(180deg, rgba(17, 20, 23, .92) 0%, rgba(17, 20, 23, .78) 55%, rgba(17, 20, 23, .50) 100%),
+          url("./assets/skillbrew-hero.png") center / cover no-repeat;
+      }
+
+      .nav-links {
+        display: none;
+      }
+
+      .hero-copy {
+        padding-bottom: 52px;
+      }
+
+      .pain-grid,
+      .features,
+      .pipeline {
+        grid-template-columns: 1fr;
+      }
+
+      .runtime,
+      .runtime thead,
+      .runtime tbody,
+      .runtime tr,
+      .runtime th,
+      .runtime td {
+        display: block;
+        width: 100%;
+      }
+
+      .runtime thead {
+        display: none;
+      }
+
+      .runtime tr {
+        padding: 10px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .runtime td {
+        display: grid;
+        grid-template-columns: 96px minmax(0, 1fr);
+        gap: 12px;
+        border-bottom: 0;
+        padding: 8px 14px;
+      }
+
+      .runtime td::before {
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .runtime td:nth-child(1)::before { content: "运行时"; }
+      .runtime td:nth-child(2)::before { content: "Skill"; }
+      .runtime td:nth-child(3)::before { content: "MCP"; }
+      .runtime td:nth-child(4)::before { content: "缓存"; }
+    }
   </style>
 </head>
 <body>
-  <header>
-    <div class="container">
-      <div class="logo">S</div>
-      <h1>SkillBREW</h1>
-      <p class="tagline">
-        技能酿造局：丢链接进去，<strong>自动消化、自动评估、自动去重，真实安装后留下透明台账</strong>，还能在 Claude Code 与 Codex CLI 之间<strong>双运行时中立</strong>运行。让你清楚 Agent 里有什么、怎么调。
-      </p>
-      <div class="cta">
-        <a class="btn btn-primary" href="https://github.com/Rookage/skillbrew" target="_blank" rel="noopener">GitHub 仓库</a>
-        <a class="btn btn-secondary" href="#install">快速开始</a>
+  <header class="hero">
+    <nav class="nav">
+      <div class="wrap nav-inner">
+        <div class="brand"><span class="mark">SB</span><span>SkillBREW</span></div>
+        <div class="nav-links">
+          <a href="#why">为什么 / Why</a>
+          <a href="#pipeline">管线 / Pipeline</a>
+          <a href="#start">开始 / Start</a>
+          <a href="https://github.com/Rookage/skillbrew">GitHub</a>
+        </div>
+      </div>
+    </nav>
+    <div class="wrap">
+      <div class="hero-copy">
+        <p class="eyebrow">Local-first agent capability manager</p>
+        <h1>技能酿造局</h1>
+        <p>把散落在视频、网页、README 和推荐清单里的 Agent 能力，酿成可验证、可安装、可追踪的一套本地能力库。<br>Turn scattered agent tips into a verified local capability cellar.</p>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/Rookage/skillbrew">查看仓库 / GitHub</a>
+          <a class="button" href="#start">快速开始 / Start</a>
+        </div>
       </div>
     </div>
   </header>
 
-  <section id="capabilities">
-    <div class="container">
-      <h2>六大核心能力</h2>
-      <div class="cards">
-        <div class="card">
-          <div class="icon">🧠</div>
-          <h3>自动去重</h3>
-          <p>把本地已装能力、历史台账和新推荐三者交叉比对。名字命中直接跳过，描述高度重叠标为整并候选，其余才算新增。</p>
-        </div>
-        <div class="card">
-          <div class="icon">⭐</div>
-          <h3>自动评估</h3>
-          <p>结合一手溯源（仓库存在性、星数、维护状态）和本机能力画像，给出「值得装 / 挑着装 / 整源跳过」的结构化建议。</p>
-        </div>
-        <div class="card">
-          <div class="icon">⚡</div>
-          <h3>真实安装</h3>
-          <p>默认 dry-run，授权后才真落盘。支持 Skill、MCP、代码、配置、Prompt 多种形态，按运行时约定落到正确位置。</p>
-        </div>
-        <div class="card">
-          <div class="icon">📊</div>
-          <h3>透明台账</h3>
-          <p>装完自动生成 RECORD.md 台账与 DASHBOARD.md 看板，记录来源、时间、调用方式与就绪状态，越装越清楚。</p>
-        </div>
-        <div class="card">
-          <div class="icon">🤖</div>
-          <h3>通用安装器</h3>
-          <p>AI 自动读源头仓库推断安装方法，试跑验证后装，缺什么就问你补什么。缓存命中秒装，catalog 种子兜底，装不了就明白告诉你卡在哪。</p>
-        </div>
-        <div class="card">
-          <div class="icon">🖥️</div>
-          <h3>双运行时中立</h3>
-          <p>自动识别 Claude Code 与 Codex CLI，自动切换 Skill 目录、MCP 配置和克隆缓存路径，可用环境变量逐项覆盖。</p>
-        </div>
+  <section id="why" class="band-light">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Agent 能力不是越装越强，是越清楚越强。</h2>
+        <p class="lead">很多人真正缺的不是更多工具，而是一个把工具从“看过、收藏过、装过但忘了”变成可管理资产的中间层。SkillBREW manages the messy space between “I saw a useful tool” and “my agent can reliably use it.”</p>
+      </div>
+      <div class="pain-grid">
+        <div class="pain">收藏吃灰<span>Saved a tool tip, lost the trail.</span></div>
+        <div class="pain">重复安装<span>Same capability, different name.</span></div>
+        <div class="pain">配置漂移<span>Claude Code and Codex do not share the same paths.</span></div>
+        <div class="pain">黑箱决策<span>The AI says “done,” but what changed?</span></div>
+        <div class="pain">调用遗忘<span>Installed, then forgotten at call time.</span></div>
       </div>
     </div>
   </section>
 
-  <section id="pipeline">
-    <div class="container">
-      <h2>8 步管线</h2>
-      <p>从丢链接到能力落地，每一步都可独立运行、可审计、可回滚。</p>
-      <div class="pipeline">
-        <span class="pipe-step">采集</span><span class="pipe-arrow">→</span>
-        <span class="pipe-step">理解</span><span class="pipe-arrow">→</span>
-        <span class="pipe-step">消化</span><span class="pipe-arrow">→</span>
-        <span class="pipe-step">溯源</span><span class="pipe-arrow">→</span>
-        <span class="pipe-step">判断</span><span class="pipe-arrow">→</span>
-        <span class="pipe-step">去重</span><span class="pipe-arrow">→</span>
-        <span class="pipe-step">安装</span><span class="pipe-arrow">→</span>
-        <span class="pipe-step">记录</span>
+  <section id="pipeline" class="band-dark">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>8 步管线，把原料酿成能力。</h2>
+        <p class="lead">每一步都能单独跑，中间产物都留在本地目录。Not a one-shot magic trick, but an inspectable craft: collect, understand, verify, judge, dedupe, install, and record.</p>
       </div>
-      <p>中间产物全部落在 <code>data/sources/&lt;id&gt;/</code>，随时可复查。</p>
+      <div class="pipeline" aria-label="8 步管线">
+        <div class="step"><b>01</b><span>采集<br>Collect</span></div>
+        <div class="step"><b>02</b><span>理解<br>Understand</span></div>
+        <div class="step"><b>03</b><span>消化<br>Digest</span></div>
+        <div class="step"><b>04</b><span>溯源<br>Verify</span></div>
+        <div class="step"><b>05</b><span>判断<br>Judge</span></div>
+        <div class="step"><b>06</b><span>去重<br>Dedupe</span></div>
+        <div class="step"><b>07</b><span>安装<br>Install</span></div>
+        <div class="step"><b>08</b><span>记录<br>Record</span></div>
+      </div>
     </div>
   </section>
 
-  <section id="install">
-    <div class="container">
-      <h2>快速开始</h2>
-      <pre><code># 1. 克隆仓库
-git clone https://github.com/Rookage/skillbrew.git
+  <section>
+    <div class="wrap">
+      <div class="section-head">
+        <h2>它真正管三件事。</h2>
+        <p class="lead">从素材理解到安装落地之间，SkillBREW 始终保留人工授权门：AI can advise, but the final install is yours to approve.</p>
+      </div>
+      <div class="features">
+        <article class="feature">
+          <h3>判断价值 / Judge value</h3>
+          <p><code>recommend</code> decides whether to install, cherry-pick, or skip the source. No more “install the whole list because it sounded cool.”</p>
+        </article>
+        <article class="feature">
+          <h3>检查重复 / Find overlap</h3>
+          <p><code>dedup</code> scans local Skills, MCPs, repos, and the registry to catch duplicates before they become clutter.</p>
+        </article>
+        <article class="feature">
+          <h3>留下台账 / Leave a ledger</h3>
+          <p><code>record</code> writes RECORD, DASHBOARD, and an installed index so each capability has a source, status, and invocation hint.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="start" class="band-light">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>从一条链接开始。</h2>
+        <p class="lead">默认不会写入系统配置。Start with a dry-run plan, then add <code>--approve</code> only when the plan looks right.</p>
+      </div>
+      <pre class="terminal"><code>git clone https://github.com/Rookage/skillbrew.git
 cd skillbrew
-
-# 2. 复制配置并填入你自己的 key
-cp .env.example .env
-#   编辑 .env：TEXT_API_KEY / VISION_API_KEY（推荐 NVIDIA NIM，免费快 50x）
-
-# 3. 安装（可编辑，注册 skillbrew 命令）
 pip install -e .
 
-# 4. 丢一个链接进去（以抖音 MCP 推荐视频为例）
-skillbrew run https://v.douyin.com/LcTwRFgJqas/
+skillbrew doctor
+skillbrew run &lt;url-or-text&gt;
+skillbrew verify data/sources/&lt;id&gt;/
+skillbrew recommend data/sources/&lt;id&gt;/
+skillbrew dedup data/sources/&lt;id&gt;/
 
-# 5. 溯源 → 评估 → 去重
-skillbrew verify data/sources/douyin_7650401218518387995/
-skillbrew recommend data/sources/douyin_7650401218518387995/
-skillbrew dedup data/sources/douyin_7650401218518387995/
+# 先看计划
+skillbrew install data/sources/&lt;id&gt;/
 
-# 6. 先看计划，确认后再真装
-skillbrew install data/sources/douyin_7650401218518387995/
-skillbrew install data/sources/douyin_7650401218518387995/ --approve
-
-# 6b. 启用 AI 推断（catalog 未收录的 MCP 也能自动装）
-skillbrew install data/sources/douyin_7650401218518387995/ --approve --ai-infer
-
-# 7. 生成台账 + 看板
-skillbrew record data/sources/douyin_7650401218518387995/</code></pre>
-      <p>视频获取与语音转文字依赖较大，可按需安装：<code>pip install -e ".[media]"</code>。</p>
+# 确认后真实安装
+skillbrew install data/sources/&lt;id&gt;/ --approve
+skillbrew record data/sources/&lt;id&gt;/</code></pre>
     </div>
   </section>
 
-  <section id="status">
-    <div class="container">
-      <h2>现状</h2>
-      <p>骨架已跑通端到端。已真装并验证多个 MCP 服务器（playwright、filesystem、sequential-thinking、context7、github、fetch 等），具体清单和调用方式以本地 <code>RECORD.md</code> 台账为准。</p>
-      <p>D23 通用安装器已上线。首次运行无 <code>.env</code> 时会交互式引导填入 API key。默认推荐 NVIDIA NIM 免费 Qwen3.5 模型（快 50x，文本+视觉同一模型），也兼容 DeepSeek / Agnes。CI 质量门含 ruff lint + mypy 类型检查，136 个测试全部通过。</p>
-      <p><strong>暂缓安装</strong>：memos（无官方 npm 包）、MoneyPrinterTurbo（需 OPENAI_API_KEY）。更多细节见 <a href="https://github.com/Rookage/skillbrew/blob/main/README.md">README §现状</a>。</p>
+  <section class="band-dark">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>不是空壳介绍，是已经有骨架的工具。</h2>
+        <p class="lead">项目还早，但已经有端到端管线、测试门禁、运行时识别、真实 MCP 种子和通用安装器的雏形。Early, yes. Vaporware, no.</p>
+      </div>
+      <div class="proof">
+        <div class="proof-block">
+          <h3>已验证范围 / Verified ground</h3>
+          <ul>
+            <li>B站、抖音、YouTube、网页、文本输入源。Bilibili, Douyin, YouTube, webpage, and text inputs.</li>
+            <li>Skill / MCP / repo / 配置 / Prompt 多形态计划。Multi-form install plans.</li>
+            <li>playwright、filesystem、sequential-thinking、context7、github 等 MCP 种子。Verified MCP seeds.</li>
+            <li>fetch-mcp 通过 AI 推断安装链路验证。fetch-mcp passed the AI-inferred install path.</li>
+          </ul>
+        </div>
+        <div class="proof-block">
+          <h3>仍在打磨 / Still rough edges</h3>
+          <ul>
+            <li>memos MCP 暂缓，缺稳定官方 npm 包。No stable official npm package yet.</li>
+            <li>MoneyPrinterTurbo 暂缓，依赖额外凭证和运行环境。Needs credentials and runtime setup.</li>
+            <li>MCP Marketplace 对接仍在 RFC 阶段。Marketplace integration is still an RFC.</li>
+            <li>cli / install / installer 模块需要继续拆分。Core modules need cleanup.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Claude Code 出生，Codex 也要能住。</h2>
+        <p class="lead">SkillBREW 的定位不是某一个运行时的小工具，而是跨 Agent 的能力资产管理层。Born near Claude Code, built to grow across Codex and MCP workflows.</p>
+      </div>
+      <table class="runtime">
+        <thead>
+          <tr>
+            <th>运行时</th>
+            <th>Skill 目录</th>
+            <th>MCP 配置</th>
+            <th>clone 缓存</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Claude Code</td>
+            <td><code>~/.claude/skills/</code></td>
+            <td><code>~/.claude.json</code></td>
+            <td><code>~/.claude/clones/</code></td>
+          </tr>
+          <tr>
+            <td>Codex</td>
+            <td><code>~/.codex/skills/</code></td>
+            <td><code>~/.codex/config.toml</code></td>
+            <td><code>~/.codex/clones/</code></td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </section>
 
   <footer>
-    <div class="container">
-      <p>
-        <a href="https://github.com/Rookage/skillbrew">GitHub</a>
-        <a href="../README.md">README</a>
-        <a href="../PROJECT_CHARTER.md">项目章程</a>
-      </p>
-      <p>© skillbrew contributors</p>
+    <div class="wrap">
+      <span>SkillBREW — 技能酿造局 / Agent capability manager</span>
+      <span><a href="https://github.com/Rookage/skillbrew">GitHub</a> · <a href="https://github.com/Rookage/skillbrew/blob/main/PROJECT_CHARTER.md">Project Charter</a></span>
     </div>
   </footer>
 </body>
 </html>
-
