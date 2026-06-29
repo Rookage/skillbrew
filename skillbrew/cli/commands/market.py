@@ -57,5 +57,5 @@ def cmd_info(args: argparse.Namespace) -> int:
     if d.homepage:
         print(f"主页：{d.homepage}")
     print()
-    print("提示：安装命令 `skillbrew add` 尚未实现（Phase 2）。")
+    print(f"提示：用 `skillbrew add {d.qualified_name} --from smithery` 安装。")
     return 0

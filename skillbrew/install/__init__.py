@@ -25,6 +25,7 @@ from .executor import (
     _write_resolve_trace,
     format_plan_text,
     install,
+    register_mcp,
 )
 from .mcp_toml import (
     _strip_toml_comment,
@@ -82,6 +83,7 @@ from .utils import _MAX_RETRIES, _RETRY_BACKOFF, _TIMEOUT, UA, _fetch_bytes, _no
 __all__ = [
     "install",
     "format_plan_text",
+    "register_mcp",
     "_main",
     "_write_resolve_trace",
     "_fetch_bytes",

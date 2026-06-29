@@ -8,6 +8,7 @@ import os
 from skillbrew import __version__
 
 from .commands import (
+    cmd_add,
     cmd_config,
     cmd_dedup,
     cmd_doctor,
@@ -203,6 +204,60 @@ def build_parser() -> argparse.ArgumentParser:
     p_info = sub.add_parser("info", help="看某个 MCP 在市场里的详情（只读，不安装）")
     p_info.add_argument("name", help="MCP 的 qualifiedName（如 github）")
     p_info.set_defaults(func=cmd_info)
+
+    p_add = sub.add_parser(
+        "add",
+        help="注册一个 MCP 服务器进配置 + 登记台账（默认 dry-run，--approve 才真写）",
+    )
+    p_add.add_argument("name", help="MCP 名（注册 key）；--from smithery 时用市场 qualifiedName")
+    p_add.add_argument(
+        "--from",
+        dest="from_smithery",
+        metavar="MARKET",
+        choices=["smithery"],
+        help="从市场拉详情自动取远程 URL（当前支持 smithery）",
+    )
+    p_add.add_argument("--url", metavar="URL", help="远程 HTTP/SSE 地址（远程 MCP 用）")
+    p_add.add_argument(
+        "--transport",
+        choices=["http", "sse", "stdio"],
+        default=None,
+        help="连接方式（默认按 --url/--command 推断；显式指定可强制 sse 等）",
+    )
+    p_add.add_argument("--command", metavar="CMD", help="本地 stdio 命令（如 npx）")
+    p_add.add_argument(
+        "--arg",
+        action="append",
+        default=None,
+        metavar="ARG",
+        help="本地命令的参数，可重复；值以 - 开头时用等号 --arg=-y（argparse 把 -y 当选项，"
+        "如 --arg=-y --arg <包名>）",
+    )
+    p_add.add_argument(
+        "-H",
+        "--header",
+        action="append",
+        default=None,
+        metavar="K:V",
+        help="HTTP 头（可重复），如 -H 'X-Token: abc'",
+    )
+    p_add.add_argument(
+        "--env",
+        action="append",
+        default=None,
+        metavar="KEY",
+        help="声明的环境变量名（可重复），值从 os.environ 取（stdio 凭证）",
+    )
+    p_add.add_argument(
+        "--scope",
+        choices=["user", "local", "project"],
+        default="user",
+        help="注册范围（默认 user 全局）",
+    )
+    p_add.add_argument(
+        "--approve", action="store_true", help="真落盘 + 写台账（默认 dry-run，只预览）"
+    )
+    p_add.set_defaults(func=cmd_add)
 
     return parser
 
