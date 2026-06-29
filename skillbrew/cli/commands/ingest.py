@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from skillbrew.config import load_config
+
+from ..utils import _format_missing_hint, _require_binaries
 
 
 def cmd_ingest(args: argparse.Namespace) -> int:
@@ -14,6 +17,24 @@ def cmd_ingest(args: argparse.Namespace) -> int:
 
     cfg = load_config()
     src = args.source
+
+    # 预检外部二进制（按源类型判断需要啥，网页/纯文本不需要）
+    is_video_src = (
+        "bilibili.com" in src
+        or src.startswith("BV")
+        or "douyin.com" in src
+        or src.isdigit()
+        or "youtube.com" in src
+        or "youtu.be" in src
+    )
+    if is_video_src:
+        need = ["ffmpeg"]
+        if "douyin.com" in src or src.isdigit() or "youtube.com" in src or "youtu.be" in src:
+            need.append("yt-dlp")
+        missing = _require_binaries(*need)
+        if missing:
+            print(_format_missing_hint(missing), file=sys.stderr)
+            return 1
 
     # 自动识别平台
     if "bilibili.com" in src or src.startswith("BV"):

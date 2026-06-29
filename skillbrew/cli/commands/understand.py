@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 
 from skillbrew.config import load_config
 
-from ..utils import _resolve_source
+from ..utils import _format_missing_hint, _require_binaries, _resolve_source
 
 
 def cmd_understand(args: argparse.Namespace) -> int:
@@ -18,6 +19,12 @@ def cmd_understand(args: argparse.Namespace) -> int:
     src = _resolve_source(cfg, args.source)
     if not (src / "video.mp4").exists():
         print(f"[ERR] {src} 没有 video.mp4（先跑 ingest）")
+        return 1
+
+    # 预检 ffmpeg（抽关键帧/音频都需要）
+    missing = _require_binaries("ffmpeg")
+    if missing:
+        print(_format_missing_hint(missing), file=sys.stderr)
         return 1
 
     if args.skip_asr:
