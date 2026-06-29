@@ -219,6 +219,7 @@ def describe_keyframes(
     max_workers: int = 3,
     prompt: str | None = None,
     timeout: float = 900.0,
+    on_progress=None,
 ) -> list[dict]:
     """批量看关键帧（视觉，Agnes ~5min/张），落 keyframe_visions.json。
 
@@ -226,6 +227,9 @@ def describe_keyframes(
     并发(max_workers) + 每帧最多重试 2 次（应对排队/偶发错误）。返回
     [{t,file,ok,desc,elapsed,...}]。收编自原 scripts/vision_keyframes.py，
     使 understand 模块自带视觉批处理，不再依赖外部脚本。
+
+    on_progress(result_dict, done, total)：每完成一帧回调一次（可选），
+    给 CLI 层做 spinner/进度。
     """
     import time
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -271,10 +275,19 @@ def describe_keyframes(
         }
 
     results: list[dict] = []
+    total = len(kfs)
+    done = 0
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
         futures = {ex.submit(_one, kf): kf for kf in kfs}
         for fut in as_completed(futures):
-            results.append(fut.result())
+            r = fut.result()
+            results.append(r)
+            done += 1
+            if on_progress is not None:
+                try:
+                    on_progress(r, done, total)
+                except Exception:  # noqa: BLE001 — 进度回调失败不影响主流程
+                    pass
 
     results.sort(key=lambda x: x["t"])
     (src_dir / "keyframe_visions.json").write_text(
