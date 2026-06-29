@@ -144,10 +144,10 @@ def test_cli_install_except_prints_traceback(tmp_path, monkeypatch, capsys):
 
     importlib.reload(cli)  # 确保新 import traceback/warnings 生效
 
-    assert hasattr(cli, "traceback"), "cli.py 应 import traceback 供顶层 except 使用"
+    assert hasattr(cli, "traceback"), "cli 包应 import traceback 供顶层 except 使用"
 
+    import skillbrew.cli.commands.install as install_cli
     import skillbrew.install as install_mod
-    from skillbrew import cli as cli_mod
 
     # 造最小 src 目录，让 cmd_install 的 exists() 检查过
     src = tmp_path / "src"
@@ -155,8 +155,8 @@ def test_cli_install_except_prints_traceback(tmp_path, monkeypatch, capsys):
     (src / "install_list.json").write_text("{}", encoding="utf-8")
     (src / "dedup.json").write_text("{}", encoding="utf-8")
 
-    monkeypatch.setattr(cli_mod, "load_config", lambda: object())
-    monkeypatch.setattr(cli_mod, "_resolve_source", lambda cfg, s: src)
+    monkeypatch.setattr("skillbrew.config.load_config", lambda: object())
+    monkeypatch.setattr("skillbrew.cli.utils._resolve_source", lambda cfg, s: src)
 
     class _Args:
         source = str(src)
@@ -174,7 +174,7 @@ def test_cli_install_except_prints_traceback(tmp_path, monkeypatch, capsys):
 
     # 用 mock.patch 监听 traceback.print_exc 有没有被调到
     with mock.patch.object(cli.traceback, "print_exc") as m_pe:
-        rc = cli_mod.cmd_install(_Args())
+        rc = install_cli.cmd_install(_Args())
 
     # 返回码应为非 0（失败）
     assert rc != 0, f"cmd_install 异常路径应返回非零退出码，got {rc}"
@@ -182,7 +182,7 @@ def test_cli_install_except_prints_traceback(tmp_path, monkeypatch, capsys):
 
     # 再跑一次不 mock traceback，验证 stderr 真能拿到栈（capsys 捕获 pytest 级 stdout/stderr）
     monkeypatch.setattr(install_mod, "install", _boom)  # 重置
-    cli_mod.cmd_install(_Args())
+    install_cli.cmd_install(_Args())
     captured = capsys.readouterr()
     assert "Traceback (most recent call last)" in captured.err, (
         f"stderr 缺 traceback: {captured.err!r}"

@@ -1,0 +1,153 @@
+"""install 包：Skill/MCP/repo 三种形态的安装编排。
+
+子模块划分（D23 拆分，原 install.py 1443 行单文件）：
+- utils.py: 通用小工具（_fetch_bytes / _now_iso / _rel_within + UA/_TIMEOUT 常量）
+- resolver.py: 纯决策/解析（凭证判定、args 占位替换、MCP server 配置、deps 探测）
+- mcp_toml.py: Codex TOML 文本级段替换工具
+- spec.py: D23 通用安装器推断/验证/补全/缓存（原 installer.py 主体）
+- executor.py: 形态分发安装 + 主入口 install() + CLI _main()
+
+公开 API（通过 __init__ 统一 re-export，保留老代码 from skillbrew import install / from skillbrew.install import install 用法）
+"""
+
+from __future__ import annotations
+
+from . import executor, mcp_toml, resolver, spec, utils
+from .executor import (
+    _install_mcp,
+    _install_mcp_cli,
+    _install_mcp_json_merge,
+    _install_mcp_toml_merge,
+    _install_repo,
+    _install_repo_deps,
+    _install_skill,
+    _main,
+    _write_resolve_trace,
+    format_plan_text,
+    install,
+)
+from .mcp_toml import (
+    _strip_toml_comment,
+    _toml_escape_bare_key,
+    _toml_escape_string,
+    _toml_read_mcp_server,
+    _toml_render_mcp_server,
+    _toml_replace_mcp_server,
+)
+from .resolver import (
+    _credentials_configured,
+    _detect_deps_method,
+    _has_unresolved_placeholder,
+    _inject_env,
+    _mcp_server_config,
+    _resolve_args,
+)
+from .spec import (
+    _CANDIDATE_BASES,
+    _INFER_SYSTEM,
+    _KEY_FINGERPRINTS,
+    _NOT_FOUND_SIGNALS,
+    _PLACEHOLDER_RE,
+    _TRIAL_TIMEOUT,
+    InstallSpec,
+    PromptResult,
+    ResolveResult,
+    VerifyResult,
+    _atomic_write_json,
+    _build_infer_prompt,
+    _fetch_install_hints,
+    _has_key_fingerprint,
+    _load_cache,
+    _owner_repo,
+    _sanitize_env_values,
+    _snippet,
+    _spec_from_ai_dict,
+    _spec_from_cache_dict,
+    _spec_to_cache_dict,
+    _trial_arg,
+    _trial_commands,
+    _usability_of,
+    cache_invalidate,
+    cache_lookup,
+    cache_store,
+    from_catalog_entry,
+    infer_install_spec,
+    prompt_missing,
+    resolve_install_spec,
+    spec_to_item,
+    verify_install_spec,
+)
+from .utils import _MAX_RETRIES, _RETRY_BACKOFF, _TIMEOUT, UA, _fetch_bytes, _now_iso, _rel_within
+
+__all__ = [
+    "install",
+    "format_plan_text",
+    "_main",
+    "_write_resolve_trace",
+    "_fetch_bytes",
+    "_now_iso",
+    "_rel_within",
+    "UA",
+    "_TIMEOUT",
+    "_MAX_RETRIES",
+    "_RETRY_BACKOFF",
+    "_install_skill",
+    "_install_mcp",
+    "_install_mcp_cli",
+    "_install_mcp_json_merge",
+    "_install_mcp_toml_merge",
+    "_install_repo",
+    "_install_repo_deps",
+    "_credentials_configured",
+    "_resolve_args",
+    "_has_unresolved_placeholder",
+    "_inject_env",
+    "_mcp_server_config",
+    "_detect_deps_method",
+    "_toml_escape_string",
+    "_toml_escape_bare_key",
+    "_toml_render_mcp_server",
+    "_toml_replace_mcp_server",
+    "_strip_toml_comment",
+    "_toml_read_mcp_server",
+    # spec (原 installer 主体) 公开符号
+    "InstallSpec",
+    "VerifyResult",
+    "PromptResult",
+    "ResolveResult",
+    "from_catalog_entry",
+    "spec_to_item",
+    "_sanitize_env_values",
+    "_has_key_fingerprint",
+    "_spec_to_cache_dict",
+    "_spec_from_cache_dict",
+    "_load_cache",
+    "_atomic_write_json",
+    "cache_lookup",
+    "cache_store",
+    "cache_invalidate",
+    "resolve_install_spec",
+    "_owner_repo",
+    "_snippet",
+    "_fetch_install_hints",
+    "_build_infer_prompt",
+    "_spec_from_ai_dict",
+    "infer_install_spec",
+    "_trial_arg",
+    "_trial_commands",
+    "_usability_of",
+    "verify_install_spec",
+    "prompt_missing",
+    "_KEY_FINGERPRINTS",
+    "_CANDIDATE_BASES",
+    "_INFER_SYSTEM",
+    "_TRIAL_TIMEOUT",
+    "_PLACEHOLDER_RE",
+    "_NOT_FOUND_SIGNALS",
+    # 子模块
+    "utils",
+    "resolver",
+    "mcp_toml",
+    "spec",
+    "executor",
+]
