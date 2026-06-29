@@ -8,7 +8,10 @@ from __future__ import annotations
 import shutil
 import struct
 import sys
+import threading
+import time
 import zlib
+from contextlib import contextmanager
 from pathlib import Path
 
 from skillbrew.config import Config
@@ -70,6 +73,88 @@ def _format_missing_hint(missing: list[str]) -> str:
                 lines.append(f"      其他系统参考: {hints[3]}")
     lines.append("装好后重跑即可。")
     return "\n".join(lines)
+
+
+# ---- CLI 进度反馈（stdlib 简易 spinner，非 TTY 降级两行）----
+# P1-3：长耗时点（视觉看图/AI 推断/大仓溯源）需要"还在动"的提示，
+# 不引 rich，避免加依赖；非 TTY（CI/重定向/管道）自动降级。
+
+
+def _is_tty() -> bool:
+    """stderr 接交互终端才开动画；否则降级成「开始…完成」两行。"""
+    try:
+        return bool(sys.stderr.isatty())
+    except (AttributeError, ValueError):
+        return False
+
+
+@contextmanager
+def _spinner(message: str, *, stream=sys.stderr):
+    """上下文管理器：进入打「<msg>...」，TTY 下循环转 |/-\\，退出打 OK/FAIL。
+
+    用法::
+
+        with _spinner("看关键帧"):
+            long_work()
+    """
+    is_tty = _is_tty()
+    if is_tty:
+        stream.write(f"{message} ... ")
+        stream.flush()
+    else:
+        stream.write(f"{message} ... 开始\n")
+        stream.flush()
+
+    glyph = iter(["|", "/", "-", "\\"])
+    stop = threading.Event()
+
+    def _spin() -> None:
+        while not stop.is_set():
+            try:
+                g = next(glyph)
+            except StopIteration:
+                return
+            stream.write(f"\r{message} ... {g}")
+            stream.flush()
+            # 每 0.12s 一帧；stop 等待循环外的 set()
+            stop.wait(0.12)
+
+    t = threading.Thread(target=_spin, daemon=True) if is_tty else None
+    if t:
+        t.start()
+    err: BaseException | None = None
+    try:
+        yield
+    except BaseException as e:
+        err = e
+        raise
+    finally:
+        if t:
+            stop.set()
+            t.join(timeout=0.5)
+            mark = "FAIL" if err else "OK"
+            stream.write(f"\r{message} ... {mark}\n")
+            stream.flush()
+        else:
+            mark = "FAIL" if err else "完成"
+            stream.write(f"{message} ... {mark}\n")
+            stream.flush()
+
+
+def _print_progress(current: int, total: int, label: str = "", *, stream=sys.stderr) -> None:
+    """TTY 下行内刷新 [i/n]，非 TTY 下每次换行一行（日志友好）。"""
+    pct = f" ({100 * current // total}%)" if total else ""
+    suffix = f" {label}" if label else ""
+    line = f"  [{current}/{total}]{pct}{suffix}"
+    if _is_tty():
+        stream.write("\r" + line + "   ")  # 右补空格清掉旧行残留
+        stream.flush()
+        if current >= total:
+            stream.write("\n")
+            stream.flush()
+    else:
+        stream.write(line + "\n")
+        stream.flush()
 
 
 def _print_config(cfg: Config) -> None:
