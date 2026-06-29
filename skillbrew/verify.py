@@ -28,6 +28,7 @@ verify 不靠猜：直接 curl 到 GitHub，拿一手事实，回填纠正 plan.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import subprocess
 import time
@@ -39,6 +40,8 @@ from pathlib import Path
 
 from . import mcp_catalog, ratelimit
 from ._utils import _now_iso
+
+logger = logging.getLogger(__name__)
 
 API_BASE = "https://api.github.com"
 RAW_BASE = "https://raw.githubusercontent.com"
@@ -609,7 +612,8 @@ def resolve_repo(
             try:
                 tree = list_tree(co, cr, branch)
             except RuntimeError as e:
-                print(f"   [跳过] {co}/{cr}: {str(e)[:120]}", flush=True)
+                # 截断/私有/空树/瞬时错误（已重试仍失败）：留痕后跳过，别静默
+                logger.warning("[跳过] %s/%s: %s", co, cr, str(e)[:120])
                 skip_reasons.append(f"{co}/{cr}: {str(e)[:80]}")
                 continue
             checked_any = True
@@ -674,7 +678,7 @@ def resolve_repo(
                 tree = list_tree(co, cr, branch)
             except RuntimeError as e:
                 # 截断/私有/空树/瞬时错误（已重试仍失败）：留痕后跳过，别静默
-                print(f"   [跳过] {co}/{cr}: {str(e)[:120]}", flush=True)
+                logger.warning("[跳过] %s/%s: %s", co, cr, str(e)[:120])
                 skip_reasons.append(f"{co}/{cr}: {str(e)[:80]}")
                 continue
             checked_any = True

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import traceback
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from skillbrew import config
 from skillbrew.config import load_config
 
 from ..utils import _resolve_source
+
+logger = logging.getLogger(__name__)
 
 
 def cmd_dedup(args: argparse.Namespace) -> int:
@@ -38,7 +41,7 @@ def cmd_dedup(args: argparse.Namespace) -> int:
 
     def on_progress(stage: str, n) -> None:
         if stage == "classify":
-            print(f"   逐项比对 install_list {n} 个能力 ...", flush=True)
+            logger.info("逐项比对 install_list %d 个能力 ...", n)
 
     try:
         summary = dedup_mod.dedup(src, skill_dirs=skill_dirs, on_progress=on_progress)

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import traceback
 
 from skillbrew import llm, notify
 from skillbrew.config import load_config
 
 from ..utils import _print_progress, _resolve_source, _spinner
+
+logger = logging.getLogger(__name__)
 
 
 def cmd_install(args: argparse.Namespace) -> int:
@@ -33,25 +36,22 @@ def cmd_install(args: argparse.Namespace) -> int:
         head = f"{form}/{cat}" if cat else form
         if form == "MCP":
             mcp = s.get("mcp") or {}
-            print(
-                f"   [{i + 1}/{n}] 注册 MCP 服务器 {head}/{s['name']}"
-                f"（{mcp.get('transport', 'stdio')} -s {mcp.get('scope', 'user')}）...",
-                flush=True,
+            logger.info(
+                "[%d/%d] 注册 MCP 服务器 %s/%s（%s -s %s）...",
+                i + 1, n, head, s["name"],
+                mcp.get("transport", "stdio"), mcp.get("scope", "user"),
             )
         elif form == "repo":
-            print(
-                f"   [{i + 1}/{n}] clone {head}/{s['name']}"
-                f"（{s.get('repo', '')}，分支 {s.get('branch', 'main')}）...",
-                flush=True,
+            logger.info(
+                "[%d/%d] clone %s/%s（%s，分支 %s）...",
+                i + 1, n, head, s["name"],
+                s.get("repo", ""), s.get("branch", "main"),
             )
         else:
-            print(f"   [{i + 1}/{n}] 装 {head}/{s['name']}（整目录拷）...", flush=True)
+            logger.info("[%d/%d] 装 %s/%s（整目录拷）...", i + 1, n, head, s["name"])
 
-    # D23：仅 --ai-infer 才注入 chat_fn（DeepSeek），让 install() 对 unresolved MCP 推断装法。
-    # 默认关 → install() 纯查表，零行为改变（回归安全）。prompt_fn=None：交互终端走 input()，无终端写进报告。
     chat_fn = (lambda p: llm.chat_text(cfg, p)) if args.ai_infer else None
 
-    # P1-3：--ai-infer 时 unresolved 推断每条都要等 LLM（慢），给 spinner + 每条进度
     _resolve_spinner_cm = None
     _on_resolve_progress = None
     if args.ai_infer:
@@ -89,7 +89,6 @@ def cmd_install(args: argparse.Namespace) -> int:
         return 2
 
     print("\n" + "=" * 60)
-    # per-item 形态明细（反黑箱 D22）：MCP 列 command/args/scope/usability，Skill 列目标+文件数
     detail = r.get("items_detail") or []
     first_form = detail[0].get("form", "Skill") if detail else "Skill"
     if first_form == "repo":
@@ -173,9 +172,6 @@ def cmd_install(args: argparse.Namespace) -> int:
             names = ", ".join(d["name"] for d in r["skipped_config"])
             print(f"   跳过需配置：{len(r['skipped_config'])} 个 → {names}（替换占位符后重跑）")
         print(f"   {r.get('note', '')}")
-        # 邮件通知（可选）：install --approve 真装完成才发 HTML 报告（用户立规，
-        # 延续 feedback-install-report-email）。未配置→主动提示一次（不报错）；
-        # 配置→发完回执；发送本身失败也不影响安装结果。
         if notify.is_configured():
             res = notify.send_html(
                 f"[skillbrew] 安装完成 · {r.get('source_video', '')}",

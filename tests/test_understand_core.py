@@ -27,7 +27,7 @@ def test_align_keyframes_basic(tmp_path):
     out = align_keyframes(tp, kfs, window=5.0)
     assert len(out) == 2
     assert "开场白" in out[0]["nearby_subtitle"]
-    assert "核心观点" in out[0]["nearby_subtitle"]  # 2.0+5=7 覆盖到 4-8 段
+    assert "核心观点" in out[0]["nearby_subtitle"]
     assert "结尾演示" in out[1]["nearby_subtitle"]
     assert out[0]["t"] == 2.0
     assert out[1]["file"] == "kf_12s.jpg"
@@ -64,7 +64,7 @@ def test_warn_asr_unavailable_with_local_path(capsys):
     from skillbrew.understand import _warn_asr_unavailable
 
     _warn_asr_unavailable("small", "/tmp/m", RuntimeError("boom"))
-    out = capsys.readouterr().out
+    out = capsys.readouterr().err
     assert "ASR" in out
     assert "WHISPER_MODEL_PATH" in out
     assert "检查目录是否完整" in out
@@ -75,7 +75,7 @@ def test_warn_asr_unavailable_without_local_path(capsys):
     from skillbrew.understand import _warn_asr_unavailable
 
     _warn_asr_unavailable("small", "", RuntimeError("boom"))
-    out = capsys.readouterr().out
+    out = capsys.readouterr().err
     assert "hf-mirror.com" in out
     assert "没字幕也能继续" in out
 
@@ -98,8 +98,6 @@ def test_transcribe_failure_writes_empty(tmp_path, monkeypatch):
         raising=False,
     )
 
-    # transcribe 里有懒 import "from faster_whisper import WhisperModel"
-    # 用 sys.modules 注入桩模块
     import types
 
     fake_mod = types.ModuleType("faster_whisper")
@@ -152,7 +150,6 @@ def test_describe_keyframes_partial_failure(monkeypatch, tmp_path):
         raise RuntimeError("vision api down")
 
     monkeypatch.setattr(llm_mod, "chat_vision", _fake_chat_vision)
-    # 把 sleep 打桩成不等待（避免重试 5s/10s 拉长测试）
     monkeypatch.setattr(time_mod, "sleep", lambda *_a, **_kw: None)
 
     res = ud.describe_keyframes(object(), tmp_path, max_workers=1)
@@ -162,7 +159,7 @@ def test_describe_keyframes_partial_failure(monkeypatch, tmp_path):
     assert by_t[0]["desc"] == "ok frame 0"
     assert by_t[10]["ok"] is False
     assert "error" in by_t[10]
-    assert by_t[10]["attempts"] == 3  # 重试耗尽
+    assert by_t[10]["attempts"] == 3
     data = json.loads((tmp_path / "keyframe_visions.json").read_text(encoding="utf-8"))
     assert len(data) == 2
     assert sum(1 for r in data if r["ok"]) == 1
@@ -209,18 +206,15 @@ def test_select_keyframes_uses_farthest_point(monkeypatch, tmp_path):
 
     import skillbrew.understand as ud
 
-    # 造 6 帧假签名（差异均匀分布）
     sigs = []
     for i in range(6):
         arr = np.zeros((_THUMB_H_TEST, _THUMB_W_TEST), dtype=np.float32)
-        arr[:, : i + 1] = 255  # 每帧亮区递增，互相差异明显
+        arr[:, : i + 1] = 255
         sigs.append((float(i * 2), arr))
 
     monkeypatch.setattr(ud, "_signatures", lambda _v, _i: sigs)
 
-    # 截下 ffmpeg 全分辨率抽帧调用：只创建空文件
     def _fake_run(cmd, **kw):
-        # cmd[-1] 是输出路径
         out_path = cmd[-1]
         Path(out_path).write_bytes(b"fakejpg")
         return None
@@ -233,13 +227,10 @@ def test_select_keyframes_uses_farthest_point(monkeypatch, tmp_path):
     video.write_bytes(b"fake")
     kfs = ud.select_keyframes(video, tmp_path, max_frames=3, min_spacing=1.0)
     assert len(kfs) == 3
-    # 时间顺序
     ts = [k["t"] for k in kfs]
     assert ts == sorted(ts)
-    # 文件都存在
     for k in kfs:
         assert (tmp_path / "keyframes" / k["file"]).exists()
-    # 第一帧一定入选（farthest-point 首帧固定）
     assert 0.0 in ts
 
 

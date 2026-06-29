@@ -29,21 +29,27 @@ _VISION_PROMPT = (
 
 
 def _warn_asr_unavailable(model_size: str, local_path: str, e: Exception) -> None:
-    """ASR（语音转文字）失败时跳出人类可读提醒（issue #3/#4，用户立规）。"""
-    print("=" * 64)
-    print("[警告] ASR（语音转文字）模型加载/转写失败，本轮跳过字幕。")
-    print(f"  原因：{type(e).__name__}: {str(e)[:200]}")
+    """ASR（语音转文字）失败时跳出人类可读提醒（issue #3/#4，用户立规）。
+
+    保留 print 而非 logger：这是多行人类可读引导块，走 stderr（与 CLI 错误同流），
+    多行格式不适合塞到 logger 的单行里。
+    """
+    import sys as _sys
+
+    print("=" * 64, file=_sys.stderr)
+    print("[警告] ASR（语音转文字）模型加载/转写失败，本轮跳过字幕。", file=_sys.stderr)
+    print(f"  原因：{type(e).__name__}: {str(e)[:200]}", file=_sys.stderr)
     if local_path:
-        print(f"  你设了 WHISPER_MODEL_PATH={local_path}，但该路径加载失败——")
-        print("  请检查目录是否完整（应含 model.bin / config.json / tokenizer 等）。")
+        print(f"  你设了 WHISPER_MODEL_PATH={local_path}，但该路径加载失败——", file=_sys.stderr)
+        print("  请检查目录是否完整（应含 model.bin / config.json / tokenizer 等）。", file=_sys.stderr)
     else:
-        print(f"  想用的模型：{model_size}（HuggingFace: Systran/faster-whisper-{model_size}）")
-        print("  镜像 hf-mirror.com 拉不下来时，可：")
-        print(f"    1) 确认能访问 https://hf-mirror.com/Systran/faster-whisper-{model_size}")
-        print(f"    2) 或翻墙从官方下：https://huggingface.co/Systran/faster-whisper-{model_size}")
-        print("       下好整个目录后，在 .env 设 WHISPER_MODEL_PATH=<那个目录> 走本地模型。")
-    print("  ⚠ 没字幕也能继续跑（关键帧看图不受影响），但消化质量会打折。")
-    print("=" * 64)
+        print(f"  想用的模型：{model_size}（HuggingFace: Systran/faster-whisper-{model_size}）", file=_sys.stderr)
+        print("  镜像 hf-mirror.com 拉不下来时，可：", file=_sys.stderr)
+        print(f"    1) 确认能访问 https://hf-mirror.com/Systran/faster-whisper-{model_size}", file=_sys.stderr)
+        print(f"    2) 或翻墙从官方下：https://huggingface.co/Systran/faster-whisper-{model_size}", file=_sys.stderr)
+        print("       下好整个目录后，在 .env 设 WHISPER_MODEL_PATH=<那个目录> 走本地模型。", file=_sys.stderr)
+    print("  ⚠ 没字幕也能继续跑（关键帧看图不受影响），但消化质量会打折。", file=_sys.stderr)
+    print("=" * 64, file=_sys.stderr)
 
 
 def transcribe(audio_path: Path, out_dir: Path, *, model_size: str = "small") -> dict:
@@ -53,22 +59,19 @@ def transcribe(audio_path: Path, out_dir: Path, *, model_size: str = "small") ->
     没字幕也能继续跑后续管线（质量打折，但流程不断）。降级=写空 transcript.json/.txt、返回空。
     plan.py 的兜底是「空字幕 + 非空关键帧」仍可消化，故空 transcript 必须落盘（不能省）。
     """
-    # huggingface_hub 只认 HF_ENDPOINT 这一个镜像 env；HF_HUB_ENDPOINT 是无效变量（旧代码误设，已删）
     os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
     from faster_whisper import WhisperModel  # 懒导入（可选依赖）
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # 优先用本地模型目录（终极离线兜底）：env 指向已下好的 faster-whisper-small 目录，
-    # WhisperModel 原生接受本地路径作首参，完全不触发网络下载。
     local_path = (os.environ.get("WHISPER_MODEL_PATH") or "").strip()
     model_arg = local_path or model_size
 
     try:
         m = WhisperModel(model_arg, device="cpu", compute_type="int8")
         segs, info = m.transcribe(str(audio_path), language="zh", vad_filter=True, beam_size=5)
-    except Exception as e:  # noqa: BLE001  下载/加载/转写失败（LocalEntryNotFoundError/FileMetadataError 等）
+    except Exception as e:  # noqa: BLE001
         _warn_asr_unavailable(model_size, local_path, e)
         (out_dir / "transcript.json").write_text(
             json.dumps({"segments": [], "text": "", "language": ""}, ensure_ascii=False, indent=2),
@@ -126,11 +129,7 @@ def select_keyframes(
     interval: float = 2.0,
     min_spacing: float = 5.0,
 ) -> list[dict]:
-    """选 N 张互相差异最大的关键帧并全分辨率抽出。返回 [{t, file}]。
-
-    farthest-point 采样：先纳入首帧，之后每轮选离已选集合"最近距离最大"的帧
-    （即最能补全新视角的帧），并强制 min_spacing 避免扎堆。
-    """
+    """选 N 张互相差异最大的关键帧并全分辨率抽出。返回 [{t, file}]。"""
     out_dir = Path(out_dir)
     kf_dir = out_dir / "keyframes"
     kf_dir.mkdir(parents=True, exist_ok=True)
@@ -141,21 +140,18 @@ def select_keyframes(
     if not sigs:
         raise RuntimeError("抽帧为空，检查视频文件")
 
-    # farthest-point 采样
     chosen_idx = [0]
     while len(chosen_idx) < min(max_frames, len(sigs)):
         best_i, best_d = -1, -1.0
         for i, (_, sig) in enumerate(sigs):
             if i in chosen_idx:
                 continue
-            # 与已选最近距离
             d_min = min(float(np.mean(np.abs(sig - sigs[j][1]))) for j in chosen_idx)
-            # 强制最小间距：与已选时间太近的不选
             if any(abs(sigs[i][0] - sigs[j][0]) < min_spacing for j in chosen_idx):
                 continue
             if d_min > best_d:
                 best_d, best_i = d_min, i
-        if best_i < 0:  # 受 min_spacing 限制无候选，放宽
+        if best_i < 0:
             remaining = [i for i in range(len(sigs)) if i not in chosen_idx]
             if not remaining:
                 break
@@ -168,7 +164,6 @@ def select_keyframes(
         chosen_idx.append(best_i)
     chosen_idx.sort(key=lambda i: sigs[i][0])
 
-    # 全分辨率抽出选中帧
     result = []
     for i in chosen_idx:
         t = sigs[i][0]
@@ -221,16 +216,7 @@ def describe_keyframes(
     timeout: float = 900.0,
     on_progress=None,
 ) -> list[dict]:
-    """批量看关键帧（视觉，Agnes ~5min/张），落 keyframe_visions.json。
-
-    把 keyframes/kf_*.jpg 逐张送视觉模型，问"画面里有什么"，结构化存盘。
-    并发(max_workers) + 每帧最多重试 2 次（应对排队/偶发错误）。返回
-    [{t,file,ok,desc,elapsed,...}]。收编自原 scripts/vision_keyframes.py，
-    使 understand 模块自带视觉批处理，不再依赖外部脚本。
-
-    on_progress(result_dict, done, total)：每完成一帧回调一次（可选），
-    给 CLI 层做 spinner/进度。
-    """
+    """批量看关键帧（视觉，Agnes ~5min/张），落 keyframe_visions.json。"""
     import time
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -250,7 +236,7 @@ def describe_keyframes(
         t_sec = int(kf_path.stem.split("_")[1].rstrip("s"))
         t0 = time.time()
         last_err = ""
-        for attempt in range(3):  # 最多重试 2 次
+        for attempt in range(3):
             try:
                 desc = llm.chat_vision(cfg, p, kf_path, timeout=timeout)
                 return {
@@ -286,7 +272,7 @@ def describe_keyframes(
             if on_progress is not None:
                 try:
                     on_progress(r, done, total)
-                except Exception:  # noqa: BLE001 — 进度回调失败不影响主流程
+                except Exception:  # noqa: BLE001
                     pass
 
     results.sort(key=lambda x: x["t"])
