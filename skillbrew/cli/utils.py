@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import shutil
 import struct
 import sys
 import zlib
@@ -12,6 +13,63 @@ from pathlib import Path
 
 from skillbrew.config import Config
 from skillbrew.errors import SkillbrewError
+
+# ---- 外部二进制依赖（视频链路需要）----
+
+# 每个工具的安装指引：(macOS, Debian/Ubuntu, Windows, 通用下载页)
+_INSTALL_HINTS: dict[str, tuple[str, str, str, str]] = {
+    "ffmpeg": (
+        "brew install ffmpeg",
+        "sudo apt install ffmpeg  (或 sudo dnf install ffmpeg)",
+        "winget install Gyan.FFmpeg  (或从 https://ffmpeg.org/download.html 下载)",
+        "https://ffmpeg.org/download.html",
+    ),
+    "yt-dlp": (
+        "brew install yt-dlp",
+        "sudo pip install -U yt-dlp  (或 sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && sudo chmod a+rx /usr/local/bin/yt-dlp)",
+        "winget install yt-dlp.yt-dlp",
+        "https://github.com/yt-dlp/yt-dlp#installation",
+    ),
+}
+
+
+def _require_binaries(*names: str) -> list[str]:
+    """检查外部二进制是否在 PATH 里；返回缺失的工具名列表。
+
+    用于 ingest/understand 等视频链路命令在真正干活前预检，避免
+    下载完视频才发现 ffmpeg 没装导致崩 FileNotFoundError。
+    """
+    return [n for n in names if shutil.which(n) is None]
+
+
+def _format_missing_hint(missing: list[str]) -> str:
+    """把缺失工具列表+安装指引格式化成用户能直接复制粘贴的提示。"""
+    import platform
+
+    sysname = platform.system()
+    if sysname == "Darwin":
+        idx = 0
+        os_label = "macOS"
+    elif sysname == "Linux":
+        idx = 1
+        os_label = "Linux"
+    elif sysname == "Windows":
+        idx = 2
+        os_label = "Windows"
+    else:
+        idx = 3
+        os_label = sysname
+
+    lines = ["[缺依赖] 以下外部工具未安装（视频链路必需）："]
+    for n in missing:
+        hints = _INSTALL_HINTS.get(n)
+        lines.append(f"  - {n}")
+        if hints:
+            lines.append(f"      {os_label}: {hints[idx]}")
+            if hints[3]:
+                lines.append(f"      其他系统参考: {hints[3]}")
+    lines.append("装好后重跑即可。")
+    return "\n".join(lines)
 
 
 def _print_config(cfg: Config) -> None:
