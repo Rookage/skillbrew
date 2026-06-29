@@ -23,14 +23,14 @@ It is built for **Claude Code / Codex / MCP workflows**.
 
 ## 为什么需要它 / Why It Exists
 
-很多 Agent 用户的能力库不是被设计出来的，而是被“顺手装一下”堆出来的：
+很多 Agent 用户的能力库不是被设计出来的，而是被"顺手装一下"堆出来的：
 
-Many agent workspaces are not designed. They are accumulated one “looks useful, install it” moment at a time:
+Many agent workspaces are not designed. They are accumulated one "looks useful, install it" moment at a time:
 
-- 刷到“必装 MCP”视频，先收藏，后来找不到。  
-  You watch a “must-have MCPs” video, save it, and never find the trail again.
+- 刷到"必装 MCP"视频，先收藏，后来找不到。  
+  You watch a "must-have MCPs" video, save it, and never find the trail again.
 - 看到一个仓库很酷，复制安装命令，装完忘了怎么调用。  
-  You copy a cool repo’s install command, then forget what it does or how to call it.
+  You copy a cool repo's install command, then forget what it does or how to call it.
 - 同类工具装了三遍，名字不同，功能重叠。  
   You install the same kind of tool three times under three different names.
 - 换 Claude Code / Codex 运行时后，路径、配置、MCP 注册方式又变了。  
@@ -38,8 +38,8 @@ Many agent workspaces are not designed. They are accumulated one “looks useful
 - 最后能力越来越多，但你不确定哪些可用、哪些缺 key、哪些只是躺在目录里。  
   The toolbox gets bigger, but not clearer: some tools are ready, some need keys, some are just sitting there.
 
-**中文**：SkillBREW 解决的不是“下载一个工具”这么小的事，而是 **Agent 能力从信息过载到可管理资产** 的中间层。  
-**English**: SkillBREW is not a fancier downloader. It is the missing layer between “I saw a useful capability somewhere” and “my agent can reliably use it.”
+**中文**：SkillBREW 解决的不是"下载一个工具"这么小的事，而是 **Agent 能力从信息过载到可管理资产** 的中间层。  
+**English**: SkillBREW is not a fancier downloader. It is the missing layer between "I saw a useful capability somewhere" and "my agent can reliably use it."
 
 ---
 
@@ -53,13 +53,13 @@ Inputs can be Bilibili, Douyin, YouTube, webpages, or plain text. SkillBREW coll
 
 ### 2. 回到源头验证 / Checks the original source
 
-视频里说“装这个 GitHub MCP 很好用”，它不会直接信。`verify` 会回源查仓库、README、包信息、维护状态和安装线索，尽量拿一手资料修正二手推荐。
+视频里说"装这个 GitHub MCP 很好用"，它不会直接信。`verify` 会回源查仓库、README、包信息、维护状态和安装线索，尽量拿一手资料修正二手推荐。
 
-If a video says “install this GitHub MCP,” SkillBREW does not take that on faith. `verify` goes back to the repository, README, package metadata, maintenance signals, and install hints before turning a recommendation into an install candidate.
+If a video says "install this GitHub MCP," SkillBREW does not take that on faith. `verify` goes back to the repository, README, package metadata, maintenance signals, and install hints before turning a recommendation into an install candidate.
 
 ### 3. 先判断，再去重，再安装 / Scores first, deduplicates second, installs last
 
-`recommend` 负责判断“值不值得装”，`dedup` 负责判断“是不是重复”。两件事分开做：不让 AI 黑箱决定，也不让你靠记忆硬扛。
+`recommend` 负责判断"值不值得装"，`dedup` 负责判断"是不是重复"。两件事分开做：不让 AI 黑箱决定，也不让你靠记忆硬扛。
 
 `recommend` asks whether a capability is worth installing. `dedup` asks whether you already have something like it. Those are deliberately separate questions. The AI may advise, but it does not silently decide.
 
@@ -87,7 +87,7 @@ Collect -> Understand -> Digest -> Verify -> Judge -> Deduplicate -> Install -> 
 | 步骤 / Step | 命令 / Command | 目的 / Purpose | 主要产物 / Output |
 |---|---|---|---|
 | 1. 采集 / Collect | `ingest` | 把 URL / 文本 / 网页素材落到本地 / Save source material locally | `metadata.json`、视频/音频/正文 |
-| 2. 理解 / Understand | `understand` | ASR 字幕、关键帧、视觉描述 / Transcript, keyframes, vision notes | `transcript.json`、`vision.json` |
+| 2. 理解 / Understand | `understand` | ASR 字幕、关键帧、视觉描述 / Transcript, keyframes, vision notes | `transcript.txt`、`keyframe_visions.json` |
 | 3. 消化 / Digest | `plan` | 把素材整理成可执行安装计划 / Draft an executable install plan | `plan.json` |
 | 4. 溯源 / Verify | `verify` | 回源验证仓库、MCP、repo、可用性 / Check upstream facts | `install_list.json` |
 | 5. 判断 / Judge | `recommend` | 评估值得装、挑着装、跳过 / Score and recommend | `recommend.json` |
@@ -138,6 +138,19 @@ skillbrew install data/sources/<id>/ --approve
 skillbrew record data/sources/<id>/
 ```
 
+日志与管道 / Logging and pipes:
+
+```bash
+# 默认：产品输出走 stdout，进度/诊断走 stderr，可直接管道
+skillbrew recommend data/sources/<id>/ | jq .
+
+# stdout 存结果、stderr 存日志
+skillbrew install data/sources/<id>/ > result.json 2> install.log
+
+# 开调试细节（第三方库日志会被压到 WARNING，不吵）
+LOGLEVEL=DEBUG skillbrew verify data/sources/<id>/
+```
+
 通用 MCP 安装器实验能力 / Experimental universal MCP installer:
 
 ```bash
@@ -172,14 +185,16 @@ SkillBREW is early: the skeleton runs, the core path is real, but the project is
   Codex MCP `config.toml` writing is evolving and needs more real-world round-trip tests.
 - MCP Marketplace 对接还在 RFC 阶段。  
   MCP Marketplace integration is still in RFC stage.
-- `cli.py`、`install.py`、`installer.py` 已经积累了架构债。  
-  `cli.py`, `install.py`, and `installer.py` carry architecture debt and are scheduled for cleanup.
+- 单组件挑装（D20）尚未完全落地，当前多数 skill 仍按整目录拷贝。  
+  Per-component selective install (D20) is not fully wired; most skills still copy whole directories.
+- 中间产物的 schema 还在 dataclass 阶段，未固化成正式版本化协议。  
+  Intermediate artifact schemas are still dataclass-level, not yet formalized as versioned contracts.
 
 ---
 
 ## 已验证的 MCP 种子 / Verified MCP Seeds
 
-这些不是“全部生态”，而是当前作为 catalog / 缓存种子的预验证样本。
+这些不是"全部生态"，而是当前作为 catalog / 缓存种子的预验证样本。
 
 These are not the whole ecosystem. They are verified seeds used by the catalog/cache path.
 
@@ -204,46 +219,65 @@ These are not the whole ecosystem. They are verified seeds used by the catalog/c
 ## 架构地图 / Architecture Map
 
 ```text
-              输入源 / Sources
-  Bilibili / Douyin / YouTube / Webpage / Text
-                 |
-                 v
-        ingest.py        collect raw material
-                 |
-                 v
-     understand.py       transcript + keyframes + vision notes
-                 |
-                 v
-          plan.py        draft install plan
-                 |
-                 v
-        verify.py        check upstream facts
-                 |
-                 v
-     recommend.py        judge value and priority
-                 |
-                 v
-        dedup.py         local profile + registry dedup
-                 |
-                 v
- install.py / installer.py  dry-run / approved install / AI inference
-                 |
-                 v
-       record.py         RECORD / DASHBOARD / INSTALLED_INDEX
+                输入源 / Sources
+    Bilibili / Douyin / YouTube / Webpage / Text
+                       |
+                       v
+                CLI 层 / CLI Layer
+           skillbrew <verb>  (cli/commands/*.py)
+                       |
+      ┌────────────────┼────────────────┐
+      v                v                v
+ doctor/config     run (8-step)     progress/spinner
+(cli/commands/)   (pipeline flow)  (cli/utils.py)
+                       |
+                       v
+                管线层 / Pipeline Layer
+ ingest → understand → plan → verify → recommend → dedup → install → record
+                                                                     |
+                                                          install/ 子包
+                                                    ┌──────┼──────┐
+                                                    v      v      v
+                                                  spec  resolver executor
+                                                    |      |      |
+                                                 catalog mcp_toml cache
+                       |
+                       v
+                支撑层 / Supporting Layer
+     config.py   llm.py   _logging.py   _utils.py
+     registry.py   ratelimit.py   errors.py   notify.py
+     mcp_catalog.py
 ```
 
 几个关键模块 / Key modules:
 
-- `config.py`：运行时识别、路径约定、环境变量覆盖。 / Runtime detection, path conventions, environment overrides.
-- `llm.py`：OpenAI-compatible LLM 抽象，文本组和视觉组分离。 / OpenAI-compatible LLM abstraction with separate text and vision providers.
-- `ingest.py`：多输入源采集。 / Source collection for multiple input types.
-- `understand.py`：ASR、关键帧抽取、视觉描述、空字幕兜底。 / ASR, keyframe selection, vision descriptions, empty-transcript fallback.
-- `verify.py`：GitHub / MCP / repo 一手溯源。 / Upstream verification for GitHub, MCP, and repos.
-- `recommend.py`：价值判断和整源建议。 / Value judging and source-level recommendations.
-- `dedup.py`：本地 Skill、MCP、repo、registry 多基准去重。 / Deduplication across local skills, MCPs, repos, and registry.
-- `installer.py`：InstallSpec、缓存、catalog、AI 推断、试跑验证、缺项补全。 / InstallSpec, cache, catalog, AI inference, trial verification, missing-field prompting.
-- `install.py`：真实写入、MCP JSON/TOML 合并、repo clone、dry-run 计划。 / Real writes, MCP JSON/TOML merge, repo clone, dry-run plan.
-- `record.py`：安装台账、Dashboard、能力索引和调用提示。 / Ledger, dashboard, installed index, invocation hints.
+- **CLI 层 / CLI layer:**
+  - `cli/commands/`：每个管线步骤一个命令文件（ingest / understand / plan / verify / recommend / dedup / install / record / run / config / doctor）。/ One command file per pipeline step.
+  - `cli/parser.py`：参数解析；`cli/utils.py`：spinner、进度条、终端辅助。/ Argument parsing; spinner, progress, terminal helpers.
+- **管线层 / Pipeline layer:**
+  - `ingest.py` / `understand.py` / `plan.py` / `verify.py` / `recommend.py` / `dedup.py` / `record.py`：对应 8 步里的 7 步。/ Seven of the eight pipeline steps (install lives under `install/`).
+  - `install/` 子包：`spec.py`（InstallSpec 数据结构）、`resolver.py`（装法推断 + catalog + AI 推断）、`executor.py`（真实写入 + dry-run + MCP JSON/TOML 合并 + repo clone）、`mcp_toml.py`（Codex TOML 读写）、`utils.py`、缓存目录。/ Install subpackage: data model, method resolution + catalog + AI inference, actual writes + dry-run + MCP merge + clone, Codex TOML I/O, helpers, cache.
+- **支撑层 / Supporting layer:**
+  - `config.py`：运行时识别、路径约定、环境变量覆盖。 / Runtime detection, path conventions, environment overrides.
+  - `llm.py`：OpenAI-compatible LLM 抽象，文本/视觉分离。 / OpenAI-compatible LLM abstraction with separate text and vision providers.
+  - `_logging.py`：stdlib logging 配置；stdout 走产品输出，stderr 走诊断与 spinner。/ stdlib logging setup; product output on stdout, diagnostics and spinner on stderr.
+  - `registry.py`：已装能力台账；`mcp_catalog.py`：已验证 MCP 种子；`ratelimit.py`、`errors.py`、`notify.py`、`_utils.py`：辅助件。/ Installed-registry ledger; verified MCP seeds; rate-limit, errors, notifications, shared helpers.
+
+---
+
+## 产物形态与落点 / Artifact Forms and Where They Land
+
+| 形态 / Form | 落地路径 / Landing Path | 怎么调用 / How to Invoke |
+|---|---|---|
+| Skill | `~/.claude/skills/<name>/` 或 `~/.codex/skills/<name>/` | Agent 自动发现；斜杠命令或自然语言触发 |
+| MCP 服务 / MCP server | 写入 `~/.claude.json`（Claude Code）或 `~/.codex/config.toml`（Codex）的 `mcpServers` | Agent 下次启动自动加载；工具名即调用入口 |
+| Git 仓库 / Git repo | `~/.claude/clones/<repo>/` 或 `~/.codex/clones/<repo>/` | Agent 通过 Read/Grep/Bash 直接使用，或作为 skill 引用 |
+| 配置片段 / Config fragment | 追加进项目 `CLAUDE.md` / `AGENTS.md`，或写入 `~/.claude/settings.json` | 下次对话自动加载为上下文/规则 |
+| 提示词 / Prompt | 作为 skill 的 `SKILL.md` 一部分落地 | 触发 skill 时自动带入 |
+
+安装后的台账和看板在 `data/ledger/RECORD.md` 和 `data/ledger/DASHBOARD.md`，记录了"装了什么、为什么装、怎么调"。
+
+After install, the ledger and dashboard live at `data/ledger/RECORD.md` and `data/ledger/DASHBOARD.md`, recording what was installed, why, and how to invoke it.
 
 ---
 
@@ -317,16 +351,11 @@ skillbrew --runtime codex --mcp-json ~/.codex/config.toml --clones-dir ~/.codex/
 
 当前最重要的改进方向 / Current priorities:
 
-1. 拆 `cli.py`，把命令入口拆成 `cli/commands/`。  
-   Split `cli.py` into `cli/commands/`.
-2. 把 `install.py` / `installer.py` 归包，明确“安装执行层”和“装法推断层”。  
-   Repackage `install.py` / `installer.py` into clear executor and resolver layers.
-3. 用结构化 schema 固定中间产物。  
-   Add schemas for intermediate artifacts.
-4. 抽 `sources/` 输入源适配层。  
-   Extract a `sources/` adapter layer.
-5. 对接 MCP Marketplace。  
-   Integrate MCP Marketplace search/info/add flows.
+1. **文档对齐**（进行中）：README、模块地图、产物形态表追上代码现实。/ Docs catch-up: refresh README, architecture map, and artifact table to match the shipped code.
+2. **核心 schema 固化** (#24)：中间产物 dataclass 升级成版本化协议。/ Lock down versioned schemas for intermediate artifacts.
+3. **输入源适配层** (#43)：抽 `sources/` adapter，bilibili/douyin/youtube/webpage/text/marketplace 统一接口。/ Extract a `sources/` adapter layer unifying all input types.
+4. **MCP Marketplace 对接** (#27)：search/info/add 走通，复用 8 步管线。/ Integrate MCP Marketplace search/info/add, reusing the 8-step pipeline.
+5. **按需补**：tomlkit (#40/#42)、文件锁 (#19)、类型补全——撞到再做，不排队。/ On-demand: tomlkit, file locking, type-annotation backfill — done when real bugs surface, not pre-emptively.
 
 详细决策见 [PROJECT_CHARTER.md](./PROJECT_CHARTER.md) 和 GitHub issues。  
 For deeper decisions, see [PROJECT_CHARTER.md](./PROJECT_CHARTER.md) and the GitHub issues.
@@ -347,5 +376,5 @@ python scripts/check_docs_sync.py --check
 
 ## 一句话 / One Line
 
-**中文**：SkillBREW 不是替你盲目安装更多东西，而是帮你把 Agent 能力从“看过、收藏过、装过但忘了”变成一套可验证、可回滚、可调用的本地资产。  
-**English**: SkillBREW is not here to install more stuff blindly. It turns “I saw it, saved it, maybe installed it, then forgot it” into a verified, reversible, callable local capability system.
+**中文**：SkillBREW 不是替你盲目安装更多东西，而是帮你把 Agent 能力从"看过、收藏过、装过但忘了"变成一套可验证、可回滚、可调用的本地资产。  
+**English**: SkillBREW is not here to install more stuff blindly. It turns "I saw it, saved it, maybe installed it, then forgot it" into a verified, reversible, callable local capability system.
