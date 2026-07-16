@@ -1230,7 +1230,9 @@ def _update_claude_md(claude_md: Path, index_path: Path) -> None:
     except OSError as e:
         logger.warning(
             "[record] 写 CLAUDE.md 失败（%s），已装索引仍写入 %s，可手动加一句『参考 %s』。",
-            e, index_path, index_path,
+            e,
+            index_path,
+            index_path,
         )
 
 

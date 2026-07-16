@@ -135,7 +135,10 @@ def test_register_mcp_dryrun_missing_env(monkeypatch):
     """声明了 env_keys 但 os.environ 没有 → missing_env 列出。"""
     monkeypatch.delenv("SKILLBREW_PROBE_KEY_Q", raising=False)
     r = install_mod.register_mcp(
-        "svc", transport="stdio", command="npx", args=["-y", "pkg"],
+        "svc",
+        transport="stdio",
+        command="npx",
+        args=["-y", "pkg"],
         env_keys=["SKILLBREW_PROBE_KEY_Q"],
     )
     assert r["missing_env"] == ["SKILLBREW_PROBE_KEY_Q"]
@@ -146,7 +149,10 @@ def test_register_mcp_dryrun_env_present(monkeypatch):
     """env_keys 在 os.environ 有值 → missing_env 空，预览 env 脱敏成 <KEY>。"""
     monkeypatch.setenv("SKILLBREW_PROBE_KEY_P", "val")
     r = install_mod.register_mcp(
-        "svc", transport="stdio", command="npx", args=["-y", "pkg"],
+        "svc",
+        transport="stdio",
+        command="npx",
+        args=["-y", "pkg"],
         env_keys=["SKILLBREW_PROBE_KEY_P"],
     )
     assert r["missing_env"] == []
@@ -168,8 +174,14 @@ def _isolate(tmp_path, monkeypatch):
 def test_register_mcp_approve_http(tmp_path, monkeypatch):
     cj, db = _isolate(tmp_path, monkeypatch)
     r = install_mod.register_mcp(
-        "rem", transport="http", url=_URL, headers={"X-T": _HDR_VAL},
-        scope="user", source="manual", approve=True, db_path=db,
+        "rem",
+        transport="http",
+        url=_URL,
+        headers={"X-T": _HDR_VAL},
+        scope="user",
+        source="manual",
+        approve=True,
+        db_path=db,
     )
     assert r["approve"] is True
     assert r["registered_via"] == "json-merge"
@@ -192,8 +204,14 @@ def test_register_mcp_approve_stdio(tmp_path, monkeypatch):
     cj, db = _isolate(tmp_path, monkeypatch)
     monkeypatch.setenv("SKILLBREW_PROBE_KEY_S", "val")
     r = install_mod.register_mcp(
-        "loc", transport="stdio", command="npx", args=["-y", "pkg"],
-        env_keys=["SKILLBREW_PROBE_KEY_S"], scope="user", approve=True, db_path=db,
+        "loc",
+        transport="stdio",
+        command="npx",
+        args=["-y", "pkg"],
+        env_keys=["SKILLBREW_PROBE_KEY_S"],
+        scope="user",
+        approve=True,
+        db_path=db,
     )
     assert r["approve"] is True
     data = json.loads(cj.read_text(encoding="utf-8"))
@@ -208,8 +226,9 @@ def test_register_mcp_approve_upserts_existing(tmp_path, monkeypatch):
     """同名二次 approve = upsert（不报唯一冲突，覆盖更新）。"""
     cj, db = _isolate(tmp_path, monkeypatch)
     install_mod.register_mcp("dup", transport="http", url=_URL, approve=True, db_path=db)
-    install_mod.register_mcp("dup", transport="http", url="https://other.test/mcp",
-                             approve=True, db_path=db)
+    install_mod.register_mcp(
+        "dup", transport="http", url="https://other.test/mcp", approve=True, db_path=db
+    )
     conn = registry.connect(db)
     rows = conn.execute("SELECT name FROM skills WHERE name='dup'").fetchall()
     assert len(rows) == 1  # 仍只有一行（upsert）
@@ -266,10 +285,17 @@ def test_cmd_add_bad_header(capsys):
 def test_cmd_add_from_smithery_remote(capsys, monkeypatch):
     """--from smithery + 远程托管 → 自动取 deployment_url 走 http（dry-run）。"""
     detail = ServerDetail(
-        qualified_name="github", display_name="GitHub", description="d",
-        remote=True, deployment_url=_URL, transport="http",
-        tool_count=3, prompt_count=0, resource_count=0,
-        homepage="https://smithery.test/github", needs_config=False,
+        qualified_name="github",
+        display_name="GitHub",
+        description="d",
+        remote=True,
+        deployment_url=_URL,
+        transport="http",
+        tool_count=3,
+        prompt_count=0,
+        resource_count=0,
+        homepage="https://smithery.test/github",
+        needs_config=False,
     )
     monkeypatch.setattr(marketplace, "info", lambda name, market=None: detail)
     rc = cmd_add(_ns(name="github", from_market="smithery"))
@@ -283,10 +309,17 @@ def test_cmd_add_from_smithery_remote(capsys, monkeypatch):
 def test_cmd_add_from_smithery_local_stdio(capsys, monkeypatch):
     """--from smithery + 本地 stdio → 市场详情无装法，打印手动提示，不强制装。"""
     detail = ServerDetail(
-        qualified_name="fs", display_name="FS", description="d",
-        remote=False, deployment_url="", transport="stdio",
-        tool_count=1, prompt_count=0, resource_count=0,
-        homepage="https://example.test/fs", needs_config=True,
+        qualified_name="fs",
+        display_name="FS",
+        description="d",
+        remote=False,
+        deployment_url="",
+        transport="stdio",
+        tool_count=1,
+        prompt_count=0,
+        resource_count=0,
+        homepage="https://example.test/fs",
+        needs_config=True,
     )
     monkeypatch.setattr(marketplace, "info", lambda name, market=None: detail)
     rc = cmd_add(_ns(name="fs", from_market="smithery"))
@@ -299,8 +332,10 @@ def test_cmd_add_from_smithery_local_stdio(capsys, monkeypatch):
 
 def test_cmd_add_from_smithery_market_error(capsys, monkeypatch):
     """市场拉详情失败 → 报错码 2，不崩。"""
+
     def _boom(name, market=None):
         raise marketplace.MarketplaceError("network down")
+
     monkeypatch.setattr(marketplace, "info", _boom)
     rc = cmd_add(_ns(name="x", from_market="smithery"))
     assert rc == 2

@@ -41,13 +41,28 @@ def _warn_asr_unavailable(model_size: str, local_path: str, e: Exception) -> Non
     print(f"  原因：{type(e).__name__}: {str(e)[:200]}", file=_sys.stderr)
     if local_path:
         print(f"  你设了 WHISPER_MODEL_PATH={local_path}，但该路径加载失败——", file=_sys.stderr)
-        print("  请检查目录是否完整（应含 model.bin / config.json / tokenizer 等）。", file=_sys.stderr)
+        print(
+            "  请检查目录是否完整（应含 model.bin / config.json / tokenizer 等）。",
+            file=_sys.stderr,
+        )
     else:
-        print(f"  想用的模型：{model_size}（HuggingFace: Systran/faster-whisper-{model_size}）", file=_sys.stderr)
+        print(
+            f"  想用的模型：{model_size}（HuggingFace: Systran/faster-whisper-{model_size}）",
+            file=_sys.stderr,
+        )
         print("  镜像 hf-mirror.com 拉不下来时，可：", file=_sys.stderr)
-        print(f"    1) 确认能访问 https://hf-mirror.com/Systran/faster-whisper-{model_size}", file=_sys.stderr)
-        print(f"    2) 或翻墙从官方下：https://huggingface.co/Systran/faster-whisper-{model_size}", file=_sys.stderr)
-        print("       下好整个目录后，在 .env 设 WHISPER_MODEL_PATH=<那个目录> 走本地模型。", file=_sys.stderr)
+        print(
+            f"    1) 确认能访问 https://hf-mirror.com/Systran/faster-whisper-{model_size}",
+            file=_sys.stderr,
+        )
+        print(
+            f"    2) 或翻墙从官方下：https://huggingface.co/Systran/faster-whisper-{model_size}",
+            file=_sys.stderr,
+        )
+        print(
+            "       下好整个目录后，在 .env 设 WHISPER_MODEL_PATH=<那个目录> 走本地模型。",
+            file=_sys.stderr,
+        )
     print("  ⚠ 没字幕也能继续跑（关键帧看图不受影响），但消化质量会打折。", file=_sys.stderr)
     print("=" * 64, file=_sys.stderr)
 

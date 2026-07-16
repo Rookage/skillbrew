@@ -38,14 +38,22 @@ def cmd_install(args: argparse.Namespace) -> int:
             mcp = s.get("mcp") or {}
             logger.info(
                 "[%d/%d] 注册 MCP 服务器 %s/%s（%s -s %s）...",
-                i + 1, n, head, s["name"],
-                mcp.get("transport", "stdio"), mcp.get("scope", "user"),
+                i + 1,
+                n,
+                head,
+                s["name"],
+                mcp.get("transport", "stdio"),
+                mcp.get("scope", "user"),
             )
         elif form == "repo":
             logger.info(
                 "[%d/%d] clone %s/%s（%s，分支 %s）...",
-                i + 1, n, head, s["name"],
-                s.get("repo", ""), s.get("branch", "main"),
+                i + 1,
+                n,
+                head,
+                s["name"],
+                s.get("repo", ""),
+                s.get("branch", "main"),
             )
         else:
             logger.info("[%d/%d] 装 %s/%s（整目录拷）...", i + 1, n, head, s["name"])

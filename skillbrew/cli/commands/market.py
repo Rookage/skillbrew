@@ -27,7 +27,9 @@ def cmd_search(args: argparse.Namespace) -> int:
     for i, entry in enumerate(entries, 1):
         v = "✓" if entry.verified else " "
         kind = "远程" if entry.remote else "本地"
-        print(f"{i:2}. [{v}] {entry.display_name}  ({entry.qualified_name})  [{kind}]  用 {entry.use_count}")
+        print(
+            f"{i:2}. [{v}] {entry.display_name}  ({entry.qualified_name})  [{kind}]  用 {entry.use_count}"
+        )
         desc = entry.description.replace("\n", " ")
         if len(desc) > 90:
             desc = desc[:87] + "..."

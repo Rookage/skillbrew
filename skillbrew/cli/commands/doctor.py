@@ -24,8 +24,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     print("\n[外部依赖] 视频链路需要的系统工具：")
     for b in ("ffmpeg", "yt-dlp"):
         import shutil
+
         p = shutil.which(b)
-        print(f"   - {b}: {'OK ' + p if p else '缺（视频链路不可用，详见 ingest/understand 报错指引）'}")
+        print(
+            f"   - {b}: {'OK ' + p if p else '缺（视频链路不可用，详见 ingest/understand 报错指引）'}"
+        )
 
     print("-" * 60)
     text_ok = _check_present(cfg)

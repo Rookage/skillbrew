@@ -99,9 +99,7 @@ def required_bins_for(src: str) -> tuple[str, ...]:
     return a.required_bins if a else ()
 
 
-def fetch_with_adapter(
-    src: str, out_dir: Path, **kwargs: Any
-) -> tuple[Any, type[SourceAdapter]]:
+def fetch_with_adapter(src: str, out_dir: Path, **kwargs: Any) -> tuple[Any, type[SourceAdapter]]:
     """自动检测源类型、实例化 adapter、执行 fetch。返回 (result, adapter_class)。
 
     未匹配时抛 ValueError。

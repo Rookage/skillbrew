@@ -191,13 +191,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_rec.set_defaults(func=cmd_record)
 
-    p_search = sub.add_parser(
-        "search", help="在 MCP 市场搜 MCP 服务器（只读，不安装）"
-    )
+    p_search = sub.add_parser("search", help="在 MCP 市场搜 MCP 服务器（只读，不安装）")
     p_search.add_argument("query", help="搜索关键词")
-    p_search.add_argument(
-        "--limit", type=int, default=10, metavar="N", help="每页条数（默认 10）"
-    )
+    p_search.add_argument("--limit", type=int, default=10, metavar="N", help="每页条数（默认 10）")
     p_search.add_argument("--page", type=int, default=1, metavar="N", help="页码（默认第 1 页）")
     p_search.add_argument(
         "--market",

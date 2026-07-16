@@ -120,9 +120,7 @@ def test_parse_args_dedup_multiple_skills_dir():
     """dedup --skills-dir 可重复，append 到 list。"""
     from skillbrew.cli.parser import parse_args
 
-    a = parse_args(
-        ["dedup", "/tmp/src", "--skills-dir", "/a", "--skills-dir", "/b"]
-    )
+    a = parse_args(["dedup", "/tmp/src", "--skills-dir", "/a", "--skills-dir", "/b"])
     assert a.skills_dir == ["/a", "/b"]
 
 

@@ -187,7 +187,10 @@ def test_registry_info_falls_back_to_first_when_no_latest(monkeypatch):
     """无 isLatest 标记 → 退回第一条。"""
     payload = {
         "servers": [
-            {"server": {"name": "x", "title": "X", "description": "first", "remotes": []}, "_meta": {}},
+            {
+                "server": {"name": "x", "title": "X", "description": "first", "remotes": []},
+                "_meta": {},
+            },
         ]
     }
     stub, _ = _fake_json(payload)

@@ -107,9 +107,7 @@ def test_render_quoted_name():
     """非 bare key 的 server 名渲染后 header 用引号 key。"""
     from skillbrew.install.mcp_toml import _toml_render_mcp_server
 
-    block = _toml_render_mcp_server(
-        "@modelcontextprotocol/server-filesystem", {"command": "npx"}
-    )
+    block = _toml_render_mcp_server("@modelcontextprotocol/server-filesystem", {"command": "npx"})
     # 含引号的 header
     assert "[mcp_servers." in block
     assert '"@modelcontextprotocol/server-filesystem"' in block
@@ -122,8 +120,8 @@ def test_replace_append_when_absent():
     """文件里还没有该 server 段：追加到末尾。"""
     from skillbrew.install.mcp_toml import _toml_replace_mcp_server
 
-    text = '# 原来的配置\n[other]\nfoo = 1\n'
-    block = "[mcp_servers.new_one]\ncommand = \"x\"\n"
+    text = "# 原来的配置\n[other]\nfoo = 1\n"
+    block = '[mcp_servers.new_one]\ncommand = "x"\n'
     out = _toml_replace_mcp_server(text, "new_one", block)
     assert out.count("[mcp_servers.new_one]") == 1
     assert out.endswith(block)
@@ -136,18 +134,18 @@ def test_replace_existing_server_block():
 
     text = (
         "[mcp_servers.a]\n"
-        "command = \"old\"\n"
+        'command = "old"\n'
         "\n"
         "[mcp_servers.a.env]\n"
-        "X = \"1\"\n"
+        'X = "1"\n'
         "\n"
         "[mcp_servers.b]\n"
-        "command = \"keep\"\n"
+        'command = "keep"\n'
     )
-    new_block = "[mcp_servers.a]\ncommand = \"new\"\nargs = [\"x\"]\n"
+    new_block = '[mcp_servers.a]\ncommand = "new"\nargs = ["x"]\n'
     out = _toml_replace_mcp_server(text, "a", new_block)
     assert 'command = "old"' not in out
-    assert "X = \"1\"" not in out  # 旧 env 子表被清掉
+    assert 'X = "1"' not in out  # 旧 env 子表被清掉
     assert 'command = "new"' in out
     assert 'args = ["x"]' in out
     assert 'command = "keep"' in out  # b 没动
@@ -158,8 +156,8 @@ def test_replace_preserves_comments_and_other_sections():
     """替换不吞掉其它段/注释/空白。"""
     from skillbrew.install.mcp_toml import _toml_replace_mcp_server
 
-    text = "# top comment\n[model]\nprovider = \"deepseek\"\n\n[extra]\n"
-    block = "[mcp_servers.s]\ncommand = \"x\"\n"
+    text = '# top comment\n[model]\nprovider = "deepseek"\n\n[extra]\n'
+    block = '[mcp_servers.s]\ncommand = "x"\n'
     out = _toml_replace_mcp_server(text, "s", block)
     assert "# top comment" in out
     assert "[model]" in out
@@ -177,7 +175,7 @@ def test_replace_dotted_name_quoted():
     from skillbrew.install.mcp_toml import _toml_escape_bare_key, _toml_render_mcp_server
 
     escaped = _toml_escape_bare_key(name)
-    old = f"[mcp_servers.{escaped}]\ncommand = \"old\"\n"
+    old = f'[mcp_servers.{escaped}]\ncommand = "old"\n'
     text = "[other]\na = 1\n\n" + old
     new_block = _toml_render_mcp_server(name, {"command": "new"})
     out = _toml_replace_mcp_server(text, name, new_block)
@@ -251,13 +249,7 @@ def test_read_skips_comments_and_garbage():
     """段里有注释/垃圾行/无等号行被跳过，不出错。"""
     from skillbrew.install.mcp_toml import _toml_read_mcp_server
 
-    text = (
-        "[mcp_servers.s]\n"
-        "# a comment\n"
-        "command = \"x\"\n"
-        "garbage-no-eq\n"
-        "args = [\"a\"]\n"
-    )
+    text = '[mcp_servers.s]\n# a comment\ncommand = "x"\ngarbage-no-eq\nargs = ["a"]\n'
     got = _toml_read_mcp_server(text, "s")
     assert got is not None
     assert got["command"] == "x"

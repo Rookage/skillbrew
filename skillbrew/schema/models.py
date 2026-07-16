@@ -43,9 +43,7 @@ def _from_dict(cls: type, data: dict[str, Any]) -> Any:
     传非 dict 抛 TypeError，避免静默吞错类型。
     """
     if not isinstance(data, dict):
-        raise TypeError(
-            f"{cls.__name__}.from_dict 期望 dict，收到 {type(data).__name__}"
-        )
+        raise TypeError(f"{cls.__name__}.from_dict 期望 dict，收到 {type(data).__name__}")
     known = {f.name for f in fields(cls)}
     return cls(**{k: v for k, v in data.items() if k in known})
 

@@ -33,7 +33,10 @@ def cmd_verify(args: argparse.Namespace) -> int:
             mcp = s.get("mcp") or {}
             logger.info(
                 "[%d/%d] 解析 MCP %s（%s）...",
-                i + 1, n, s["name"], mcp.get("transport", "stdio"),
+                i + 1,
+                n,
+                s["name"],
+                mcp.get("transport", "stdio"),
             )
         elif form == "repo":
             logger.info("[%d/%d] 探仓库 %s ...", i + 1, n, s.get("repo", "") or s["name"])

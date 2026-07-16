@@ -38,6 +38,7 @@ from skillbrew.sources import (
 
 # ---- 1. 注册表基础结构 ----
 
+
 def test_adapters_registered_in_priority_order() -> None:
     """5 个 adapter 必须按 priority 升序注册。"""
     names = [a.name for a in ADAPTERS]
@@ -60,6 +61,7 @@ def test_each_adapter_has_required_bins() -> None:
 
 
 # ---- 2. detect_adapter 正确分发 ----
+
 
 @pytest.mark.parametrize(
     "src, expected_name, video",
@@ -104,6 +106,7 @@ def test_required_bins_for_youtube_is_ffmpeg_ytdlp() -> None:
 
 # ---- 3. 正则 / parse 工具 ----
 
+
 def test_parse_bvid_from_url_and_bare() -> None:
     assert parse_bvid("https://www.bilibili.com/video/BV1xx411c7mD?p=2") == "BV1xx411c7mD"
     assert parse_bvid("BV1xx411c7mD") == "BV1xx411c7mD"
@@ -118,7 +121,9 @@ def test_parse_youtube_id_variants() -> None:
 
 
 def test_parse_douyin_id_from_url_and_bare() -> None:
-    assert parse_douyin_id("https://www.douyin.com/video/7384920123456789012") == "7384920123456789012"
+    assert (
+        parse_douyin_id("https://www.douyin.com/video/7384920123456789012") == "7384920123456789012"
+    )
     assert parse_douyin_id("7384920123456789012") == "7384920123456789012"
 
 
@@ -135,6 +140,7 @@ def test_youtube_re_matches_shorts() -> None:
 
 # ---- 4. resolve_subdir 输出前缀 ----
 
+
 def test_resolve_subdir_prefixes() -> None:
     assert resolve_subdir("BV1xx411c7mD").startswith("BV1")  # bilibili 直接用 BV 号
     assert resolve_subdir("7384920123456789012").startswith("douyin_")
@@ -144,6 +150,7 @@ def test_resolve_subdir_prefixes() -> None:
 
 
 # ---- 5. backward compat：skillbrew.ingest 必须 re-export 所有旧路径符号 ----
+
 
 def test_ingest_reexports_preserved() -> None:
     """现有测试 monkeypatch `skillbrew.ingest.fetch_*`——这些属性必须存在。"""
@@ -176,10 +183,19 @@ def test_ingest_reexports_preserved() -> None:
 
 # ---- 6. fetch_with_adapter 实际路由（monkeypatch 掉真正下载）----
 
-def test_fetch_with_adapter_dispatches_to_bilibili(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+
+def test_fetch_with_adapter_dispatches_to_bilibili(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     sentinel = BiliFetchResult(
-        bvid="BV1xx411c7mD", aid=1, cid=2, title="t", duration=3,
-        pic="", video_path=tmp_path / "v.mp4", audio_path=tmp_path / "a.mp3",
+        bvid="BV1xx411c7mD",
+        aid=1,
+        cid=2,
+        title="t",
+        duration=3,
+        pic="",
+        video_path=tmp_path / "v.mp4",
+        audio_path=tmp_path / "a.mp3",
         meta_path=tmp_path / "meta.json",
     )
 
@@ -203,9 +219,13 @@ def test_fetch_with_adapter_dispatches_youtube_not_webpage(
     def _fake_yt(src: str, out: Path) -> YoutubeFetchResult:
         called["yt"] += 1
         return YoutubeFetchResult(
-            video_id="dQw4w9WgXcQ", title="t", duration=0,
-            video_path=out / "v.mp4", audio_path=out / "a.mp3",
-            subtitle_path=None, meta_path=out / "meta.json",
+            video_id="dQw4w9WgXcQ",
+            title="t",
+            duration=0,
+            video_path=out / "v.mp4",
+            audio_path=out / "a.mp3",
+            subtitle_path=None,
+            meta_path=out / "meta.json",
         )
 
     def _fake_web(src: str, out: Path) -> TextFetchResult:  # pragma: no cover - 不应被调用
@@ -227,7 +247,9 @@ def test_fetch_with_adapter_dispatches_youtube_not_webpage(
 
 def test_fetch_with_adapter_text_fallback(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """乱码兜底：走 text adapter。"""
-    sentinel = TextFetchResult(title="t", text="x", text_path=tmp_path / "t.txt", meta_path=tmp_path / "m.json")
+    sentinel = TextFetchResult(
+        title="t", text="x", text_path=tmp_path / "t.txt", meta_path=tmp_path / "m.json"
+    )
 
     def _fake(src: str, out: Path, **kw: object) -> TextFetchResult:
         return sentinel

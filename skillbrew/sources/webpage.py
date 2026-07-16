@@ -63,11 +63,7 @@ def fetch_webpage(
 
     # 取标题：优先 og:title → <title> → URL
     soup = BeautifulSoup(html, "html.parser")
-    title = (
-        _og_title(soup)
-        or _tag_text(soup, "title")
-        or source.rsplit("/", 1)[-1]
-    )
+    title = _og_title(soup) or _tag_text(soup, "title") or source.rsplit("/", 1)[-1]
 
     text_path = out_dir / "transcript.txt"
     text_path.write_text(text, encoding="utf-8")

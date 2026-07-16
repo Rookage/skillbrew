@@ -100,9 +100,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         elif not args.force and (src_dir / "keyframe_visions.json").exists():
             print("[④视觉] 已存在，跳过")
         else:
-            print(
-                f"[④视觉] 看关键帧（并发 {args.max_workers}，Agnes ~5min/张，请耐心）..."
-            )
+            print(f"[④视觉] 看关键帧（并发 {args.max_workers}，Agnes ~5min/张，请耐心）...")
 
             def _on_vprog(r: dict, done: int, total: int) -> None:
                 tag = "ok" if r.get("ok") else "fail"

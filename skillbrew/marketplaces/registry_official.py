@@ -114,9 +114,7 @@ class OfficialRegistryAdapter:
         headers = remote0.get("headers") if isinstance(remote0, dict) else None
         needs_config = False
         if isinstance(headers, list):
-            needs_config = any(
-                isinstance(h, dict) and h.get("isRequired") for h in headers
-            )
+            needs_config = any(isinstance(h, dict) and h.get("isRequired") for h in headers)
         repo = s.get("repository") or {}
         transport_raw = remote0.get("type", "") if isinstance(remote0, dict) else ""
         return ServerDetail(

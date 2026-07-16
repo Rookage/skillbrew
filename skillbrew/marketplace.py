@@ -138,7 +138,9 @@ def info_smithery(qualified_name: str) -> ServerDetail:
     return ServerDetail.from_smithery(data)
 
 
-def search(query: str, limit: int = DEFAULT_LIMIT, page: int = 1, market: str | None = None) -> list[MarketEntry]:
+def search(
+    query: str, limit: int = DEFAULT_LIMIT, page: int = 1, market: str | None = None
+) -> list[MarketEntry]:
     """搜 MCP（多市场分发）。不指定 market 走默认（smithery）。
 
     Phase 3 起支持多市场：通过 marketplaces 适配器层按名分发到 smithery / registry。
